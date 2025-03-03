@@ -1,0 +1,26 @@
+namespace fury;
+
+table FileChunk {
+  id: string;
+  index: int;
+  total_chunks: int;
+  data: [ubyte];
+}
+
+table PeerMetadata {
+  peer_id: string;
+  available_files: [string];
+}
+
+table DataRequest {
+  request_id: string;
+  file_id: string;
+}
+
+table DataResponse {
+  request_id: string;
+  file_id: string;
+  chunk: FileChunk;
+}
+
+root_type DataResponse;
