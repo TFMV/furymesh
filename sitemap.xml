@@ -1,51 +1,51 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
-         <loc>https://github.com/TFMV/furymesh/</loc>
+         <loc>https://tfmv.github.io/furymesh/</loc>
          <lastmod>2025-03-09</lastmod>
     </url>
     <url>
-         <loc>https://github.com/TFMV/furymesh/whitepaper/</loc>
+         <loc>https://tfmv.github.io/furymesh/whitepaper/</loc>
          <lastmod>2025-03-09</lastmod>
     </url>
     <url>
-         <loc>https://github.com/TFMV/furymesh/advanced/</loc>
+         <loc>https://tfmv.github.io/furymesh/advanced/</loc>
          <lastmod>2025-03-09</lastmod>
     </url>
     <url>
-         <loc>https://github.com/TFMV/furymesh/api-reference/</loc>
+         <loc>https://tfmv.github.io/furymesh/api-reference/</loc>
          <lastmod>2025-03-09</lastmod>
     </url>
     <url>
-         <loc>https://github.com/TFMV/furymesh/changelog/</loc>
+         <loc>https://tfmv.github.io/furymesh/changelog/</loc>
          <lastmod>2025-03-09</lastmod>
     </url>
     <url>
-         <loc>https://github.com/TFMV/furymesh/contributing/</loc>
+         <loc>https://tfmv.github.io/furymesh/contributing/</loc>
          <lastmod>2025-03-09</lastmod>
     </url>
     <url>
-         <loc>https://github.com/TFMV/furymesh/features/multi-peer-transfers/</loc>
+         <loc>https://tfmv.github.io/furymesh/features/multi-peer-transfers/</loc>
          <lastmod>2025-03-09</lastmod>
     </url>
     <url>
-         <loc>https://github.com/TFMV/furymesh/features/resume-support/</loc>
+         <loc>https://tfmv.github.io/furymesh/features/resume-support/</loc>
          <lastmod>2025-03-09</lastmod>
     </url>
     <url>
-         <loc>https://github.com/TFMV/furymesh/getting-started/configuration/</loc>
+         <loc>https://tfmv.github.io/furymesh/getting-started/configuration/</loc>
          <lastmod>2025-03-09</lastmod>
     </url>
     <url>
-         <loc>https://github.com/TFMV/furymesh/getting-started/installation/</loc>
+         <loc>https://tfmv.github.io/furymesh/getting-started/installation/</loc>
          <lastmod>2025-03-09</lastmod>
     </url>
     <url>
-         <loc>https://github.com/TFMV/furymesh/getting-started/quick-start/</loc>
+         <loc>https://tfmv.github.io/furymesh/getting-started/quick-start/</loc>
          <lastmod>2025-03-09</lastmod>
     </url>
     <url>
-         <loc>https://github.com/TFMV/furymesh/usage/command-line/</loc>
+         <loc>https://tfmv.github.io/furymesh/usage/command-line/</loc>
          <lastmod>2025-03-09</lastmod>
     </url>
 </urlset>
