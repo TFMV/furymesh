@@ -16,6 +16,8 @@ type MockTransferManager struct {
 	dataRequestCh  chan *DataRequest
 	dataResponseCh chan *DataResponse
 	transfers      map[string]*TransferStats
+	peerChunkMap   map[string]map[string][]int
+	strategy       ChunkSelectionStrategy
 }
 
 func NewMockTransferManager(logger *zap.Logger) *MockTransferManager {
@@ -24,6 +26,8 @@ func NewMockTransferManager(logger *zap.Logger) *MockTransferManager {
 		dataRequestCh:  make(chan *DataRequest, 10),
 		dataResponseCh: make(chan *DataResponse, 10),
 		transfers:      make(map[string]*TransferStats),
+		peerChunkMap:   make(map[string]map[string][]int),
+		strategy:       &RoundRobinStrategy{},
 	}
 }
 
@@ -39,12 +43,15 @@ func (m *MockTransferManager) GetTransferStats(fileID string) (*TransferStats, e
 	if stats, exists := m.transfers[fileID]; exists {
 		return stats, nil
 	}
-	return nil, fmt.Errorf("transfer not found")
+	return nil, fmt.Errorf("no transfer found for file ID %s", fileID)
 }
 
 func (m *MockTransferManager) CancelTransfer(fileID string) error {
-	delete(m.transfers, fileID)
-	return nil
+	if _, exists := m.transfers[fileID]; exists {
+		delete(m.transfers, fileID)
+		return nil
+	}
+	return fmt.Errorf("no transfer found for file ID %s", fileID)
 }
 
 func (m *MockTransferManager) ListActiveTransfers() map[string]*TransferStats {
@@ -52,6 +59,41 @@ func (m *MockTransferManager) ListActiveTransfers() map[string]*TransferStats {
 }
 
 func (m *MockTransferManager) CleanupCompletedTransfers() {}
+
+func (m *MockTransferManager) AddPeerForTransfer(fileID string, peerID string, availableChunks []int) error {
+	if _, exists := m.transfers[fileID]; !exists {
+		return fmt.Errorf("no transfer found for file ID %s", fileID)
+	}
+
+	// Initialize the map for this file if it doesn't exist
+	if _, exists := m.peerChunkMap[fileID]; !exists {
+		m.peerChunkMap[fileID] = make(map[string][]int)
+	}
+
+	// Store the chunks for this peer
+	m.peerChunkMap[fileID][peerID] = availableChunks
+
+	return nil
+}
+
+func (m *MockTransferManager) SetChunkSelectionStrategy(strategy ChunkSelectionStrategy) {
+	m.strategy = strategy
+}
+
+func (m *MockTransferManager) GetAvailablePeersForFile(fileID string) map[string][]int {
+	if fileMap, exists := m.peerChunkMap[fileID]; exists {
+		// Create a copy of the map
+		result := make(map[string][]int, len(fileMap))
+		for peerID, chunks := range fileMap {
+			chunksCopy := make([]int, len(chunks))
+			copy(chunksCopy, chunks)
+			result[peerID] = chunksCopy
+		}
+		return result
+	}
+
+	return make(map[string][]int)
+}
 
 // MockStorageManager implements a minimal StorageManager for testing
 type MockStorageManager struct {

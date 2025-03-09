@@ -402,6 +402,162 @@ func (fm *FileManager) RequestFileFromPeer(ctx context.Context, peerID, fileID s
 	return nil
 }
 
+// RequestFileFromMultiplePeers requests a file from multiple peers
+func (fm *FileManager) RequestFileFromMultiplePeers(ctx context.Context, fileID string) error {
+	// Check if we already have the file
+	_, err := fm.storageManager.GetMetadata(fileID)
+	if err == nil {
+		return fmt.Errorf("file already exists locally")
+	}
+
+	// Find all peers that have this file
+	fm.peerFilesMu.RLock()
+	peersWithFile := make([]string, 0)
+	for peerID, files := range fm.peerFiles {
+		for _, f := range files {
+			if f == fileID {
+				peersWithFile = append(peersWithFile, peerID)
+				break
+			}
+		}
+	}
+	fm.peerFilesMu.RUnlock()
+
+	if len(peersWithFile) == 0 {
+		return fmt.Errorf("file not available from any peer: %s", fileID)
+	}
+
+	// Request the file from the first peer to initialize the transfer
+	initialPeer := peersWithFile[0]
+	if err := fm.webrtcTransport.RequestFile(ctx, initialPeer, fileID); err != nil {
+		return fmt.Errorf("failed to request file from initial peer: %w", err)
+	}
+
+	fm.logger.Info("Requested file from initial peer",
+		zap.String("peer_id", initialPeer),
+		zap.String("file_id", fileID),
+		zap.Int("total_peers", len(peersWithFile)))
+
+	// Add the remaining peers as sources for the transfer
+	if len(peersWithFile) > 1 {
+		// Wait a short time for the initial transfer to be set up
+		time.Sleep(500 * time.Millisecond)
+
+		// Get the transfer stats to check if it was initialized
+		stats, err := fm.transferManager.GetTransferStats(fileID)
+		if err != nil {
+			fm.logger.Warn("Failed to get transfer stats for multi-peer setup",
+				zap.String("file_id", fileID),
+				zap.Error(err))
+			return nil // Return nil since the initial request was successful
+		}
+
+		// Add the remaining peers
+		for i := 1; i < len(peersWithFile); i++ {
+			peerID := peersWithFile[i]
+			// For simplicity, assume all peers have all chunks
+			// In a real implementation, you would query each peer for their available chunks
+			availableChunks := generateSequence(0, stats.TotalChunks-1)
+
+			err := fm.transferManager.AddPeerForTransfer(fileID, peerID, availableChunks)
+			if err != nil {
+				fm.logger.Warn("Failed to add peer for transfer",
+					zap.String("file_id", fileID),
+					zap.String("peer_id", peerID),
+					zap.Error(err))
+				continue
+			}
+
+			fm.logger.Info("Added peer as source for transfer",
+				zap.String("file_id", fileID),
+				zap.String("peer_id", peerID))
+		}
+
+		// Set the chunk selection strategy to rarest-first for multi-peer transfers
+		fm.transferManager.SetChunkSelectionStrategy(file.GetRarestFirstStrategy())
+	}
+
+	return nil
+}
+
+// Helper function to generate a sequence of integers
+func generateSequence(start, end int) []int {
+	result := make([]int, end-start+1)
+	for i := range result {
+		result[i] = start + i
+	}
+	return result
+}
+
+// ResumeTransfer attempts to resume an interrupted transfer
+func (fm *FileManager) ResumeTransfer(ctx context.Context, fileID string) error {
+	// Check if we have any peers that have this file
+	fm.peerFilesMu.RLock()
+	peersWithFile := make([]string, 0)
+	for peerID, files := range fm.peerFiles {
+		for _, f := range files {
+			if f == fileID {
+				peersWithFile = append(peersWithFile, peerID)
+				break
+			}
+		}
+	}
+	fm.peerFilesMu.RUnlock()
+
+	if len(peersWithFile) == 0 {
+		return fmt.Errorf("file not available from any peer: %s", fileID)
+	}
+
+	// Request the file from the first available peer
+	initialPeer := peersWithFile[0]
+	if err := fm.webrtcTransport.RequestFile(ctx, initialPeer, fileID); err != nil {
+		return fmt.Errorf("failed to resume file transfer: %w", err)
+	}
+
+	fm.logger.Info("Resumed file transfer",
+		zap.String("peer_id", initialPeer),
+		zap.String("file_id", fileID))
+
+	// If there are multiple peers, add them as sources
+	if len(peersWithFile) > 1 {
+		// Wait a short time for the initial transfer to be set up
+		time.Sleep(500 * time.Millisecond)
+
+		// Get the transfer stats
+		stats, err := fm.transferManager.GetTransferStats(fileID)
+		if err != nil {
+			fm.logger.Warn("Failed to get transfer stats for multi-peer resume",
+				zap.String("file_id", fileID),
+				zap.Error(err))
+			return nil // Return nil since the initial request was successful
+		}
+
+		// Add the remaining peers
+		for i := 1; i < len(peersWithFile); i++ {
+			peerID := peersWithFile[i]
+			availableChunks := generateSequence(0, stats.TotalChunks-1)
+
+			err := fm.transferManager.AddPeerForTransfer(fileID, peerID, availableChunks)
+			if err != nil {
+				fm.logger.Warn("Failed to add peer for resumed transfer",
+					zap.String("file_id", fileID),
+					zap.String("peer_id", peerID),
+					zap.Error(err))
+				continue
+			}
+
+			fm.logger.Info("Added peer as source for resumed transfer",
+				zap.String("file_id", fileID),
+				zap.String("peer_id", peerID))
+		}
+
+		// Set the chunk selection strategy to rarest-first for multi-peer transfers
+		fm.transferManager.SetChunkSelectionStrategy(file.GetRarestFirstStrategy())
+	}
+
+	return nil
+}
+
 // GetTransferStats returns statistics for a transfer
 func (fm *FileManager) GetTransferStats(fileID string) (*file.TransferStats, error) {
 	return fm.transferManager.GetTransferStats(fileID)
