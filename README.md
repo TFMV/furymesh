@@ -17,6 +17,8 @@ FuryMesh leverages WebRTC data channels to create a mesh network of peers that c
 - **Persistent Storage**: Reliable storage of file chunks and metadata
 - **Transfer Management**: Advanced transfer tracking with statistics and retry mechanisms
 - **WebRTC Integration**: Seamless peer discovery and connection management
+- **End-to-End Encryption**: Secure file transfers with RSA key exchange and AES-256 encryption
+- **DHT-based Peer Discovery**: Kademlia distributed hash table for efficient peer discovery without central servers
 
 ## Components
 
@@ -84,6 +86,23 @@ api:
 storage:
   work_dir: "~/.furymesh/work"
   base_dir: "~/.furymesh"
+  
+# DHT configuration
+dht:
+  enabled: true
+  address: "0.0.0.0"
+  port: 8000
+  bootstrap_nodes:
+    - "bootstrap1.furymesh.example:8000"
+    - "bootstrap2.furymesh.example:8000"
+
+# Encryption configuration
+encryption:
+  enabled: true
+  keys_dir: "~/.furymesh/keys"
+  key_size: 2048
+  session_key_size: 256
+  cipher_mode: "GCM"
 ```
 
 ### Usage
@@ -238,3 +257,56 @@ flatc --go schema.fbs
 ## License
 
 This project is licensed under the terms of the LICENSE file included in the repository.
+
+## Security Features
+
+### End-to-End Encryption
+
+FuryMesh implements robust end-to-end encryption to ensure that all file transfers are secure:
+
+1. **Key Management**:
+   - RSA key pairs (2048-bit by default) are generated for each node
+   - Keys are stored securely with appropriate file permissions
+   - Public keys are exchanged during peer connection
+
+2. **Session Keys**:
+   - Unique AES-256 session keys are generated for each file transfer
+   - Session keys are exchanged securely using RSA encryption
+   - Session keys are used to encrypt/decrypt file chunks
+
+3. **Encryption Process**:
+   - File chunks are encrypted using AES-256-GCM
+   - Each chunk includes authentication data to prevent tampering
+   - Encrypted chunks are transmitted over secure WebRTC data channels
+
+4. **Configuration**:
+   - Encryption settings can be customized in the `config.yaml` file
+   - Options include key size, session key size, and cipher mode
+
+### Peer Discovery
+
+FuryMesh uses a Kademlia Distributed Hash Table (DHT) for decentralized peer discovery:
+
+1. **DHT Structure**:
+   - Nodes are organized in a binary tree structure
+   - Each node maintains a routing table of known peers
+   - Node IDs are generated using SHA-256 hashes
+
+2. **Node Lookup**:
+   - Efficient O(log n) lookup algorithm
+   - Concurrent node queries for faster discovery
+   - Automatic routing table maintenance
+
+3. **File Announcements**:
+   - Files are announced to the DHT with metadata
+   - File lookups use the same efficient algorithm
+   - Periodic republishing ensures availability
+
+4. **Bootstrap Process**:
+   - New nodes connect to bootstrap nodes to join the network
+   - Bootstrap nodes are configurable in the `config.yaml` file
+   - The system can operate without bootstrap nodes once connected
+
+5. **Configuration**:
+   - DHT settings can be customized in the `config.yaml` file
+   - Options include refresh intervals, replication intervals, and bootstrap nodes
