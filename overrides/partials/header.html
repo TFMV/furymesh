@@ -1,0 +1,169 @@
+<!-- Load FontAwesome for icons -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+
+<!-- Header -->
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="{{ lang.t('header.title') }}">
+
+    <!-- Link to home -->
+    <a href="{{ config.site_url | default(nav.homepage.url, true) | url }}" title="{{ config.site_name }}" class="md-header__button md-logo" aria-label="{{ config.site_name }}">
+      {% include "partials/logo.html" %}
+    </a>
+
+    <!-- Button to open drawer -->
+    <label class="md-header__button md-icon" for="__drawer">
+      {% include ".icons/material/menu" ~ ".svg" %}
+    </label>
+
+    <!-- Header title -->
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            {{ config.site_name }}
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            {% if page and page.meta and page.meta.title %}
+              {{ page.meta.title }}
+            {% else %}
+              {{ page.title }}
+            {% endif %}
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Color palette toggle -->
+    {% if config.theme.palette %}
+      {% if not config.theme.palette is mapping %}
+        <form class="md-header__option" data-md-component="palette">
+          {% for option in config.theme.palette %}
+            {% set scheme = option.scheme | d("default", true) %}
+            <input class="md-option" data-md-color-media="{{ option.media }}" data-md-color-scheme="{{ scheme }}" data-md-color-primary="{{ option.primary | d("indigo", true) }}" data-md-color-accent="{{ option.accent | d("indigo", true) }}" {% if option.toggle %} aria-label="{{ option.toggle.name }}" {% else %} aria-hidden="true" {% endif %} type="radio" name="__palette" id="__palette_{{ loop.index }}">
+            {% if option.toggle %}
+              <label class="md-header__button md-icon" title="{{ option.toggle.name }}" for="__palette_{{ loop.index0 or loop.length }}" hidden>
+                {% include ".icons/" ~ option.toggle.icon ~ ".svg" %}
+              </label>
+            {% endif %}
+          {% endfor %}
+        </form>
+      {% endif %}
+    {% endif %}
+
+    <!-- Site language selector -->
+    {% if config.extra.alternate %}
+      <div class="md-header__option">
+        <div class="md-select">
+          {% set icon = config.theme.icon.alternate or "material/translate" %}
+          <button class="md-header__button md-icon" aria-label="{{ lang.t('select.language.title') }}">
+            {% include ".icons/" ~ icon ~ ".svg" %}
+          </button>
+          <div class="md-select__inner">
+            <ul class="md-select__list">
+              {% for alt in config.extra.alternate %}
+                <li class="md-select__item">
+                  <a href="{{ alt.link | url }}" hreflang="{{ alt.lang }}" class="md-select__link">
+                    {{ alt.name }}
+                  </a>
+                </li>
+              {% endfor %}
+            </ul>
+          </div>
+        </div>
+      </div>
+    {% endif %}
+
+    <!-- Button to open search modal -->
+    {% if "search" in config.plugins %}
+      <label class="md-header__button md-icon" for="__search">
+        {% include ".icons/material/magnify.svg" %}
+      </label>
+
+      <!-- Search interface -->
+      {% include "partials/search.html" %}
+    {% endif %}
+
+    <!-- Repository information -->
+    {% if config.repo_url %}
+      <div class="md-header__source">
+        {% include "partials/source.html" %}
+      </div>
+    {% endif %}
+  </nav>
+
+  <!-- Navigation tabs (sticky) -->
+  {% if "navigation.tabs.sticky" in config.theme.features %}
+    {% if "navigation.tabs" in config.theme.features %}
+      {% include "partials/tabs.html" %}
+    {% endif %}
+  {% endif %}
+</header>
+
+<!-- Load D3.js for interactive visualizations -->
+<script src="https://d3js.org/d3.v7.min.js"></script>
+
+<!-- Load custom JavaScript for network visualizations -->
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    // Check if we're on a page that needs network visualization
+    const networkDiagramContainer = document.getElementById('network-diagram');
+    if (networkDiagramContainer) {
+      createNetworkVisualization(networkDiagramContainer);
+    }
+  });
+
+  function createNetworkVisualization(container) {
+    // Sample network visualization code
+    const width = 600;
+    const height = 400;
+    
+    const svg = d3.select(container)
+      .append("svg")
+      .attr("width", width)
+      .attr("height", height);
+      
+    // Create a simple mesh network visualization
+    const nodes = [
+      {id: "node1", x: 100, y: 100, type: "peer"},
+      {id: "node2", x: 200, y: 150, type: "peer"},
+      {id: "node3", x: 300, y: 100, type: "peer"},
+      {id: "node4", x: 400, y: 150, type: "peer"},
+      {id: "node5", x: 250, y: 250, type: "self"}
+    ];
+    
+    const links = [
+      {source: "node1", target: "node2"},
+      {source: "node2", target: "node3"},
+      {source: "node3", target: "node4"},
+      {source: "node2", target: "node5"},
+      {source: "node3", target: "node5"},
+      {source: "node5", target: "node4"}
+    ];
+    
+    // Draw links
+    svg.selectAll("line")
+      .data(links)
+      .enter()
+      .append("line")
+      .attr("x1", d => nodes.find(n => n.id === d.source).x)
+      .attr("y1", d => nodes.find(n => n.id === d.source).y)
+      .attr("x2", d => nodes.find(n => n.id === d.target).x)
+      .attr("y2", d => nodes.find(n => n.id === d.target).y)
+      .attr("stroke", "#999")
+      .attr("stroke-width", 2);
+    
+    // Draw nodes
+    svg.selectAll("circle")
+      .data(nodes)
+      .enter()
+      .append("circle")
+      .attr("cx", d => d.x)
+      .attr("cy", d => d.y)
+      .attr("r", d => d.type === "self" ? 12 : 8)
+      .attr("fill", d => d.type === "self" ? "#673ab7" : "#ffeb3b")
+      .attr("stroke", "#fff")
+      .attr("stroke-width", 2);
+  }
+</script> 

@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+    <!-- Background Circle -->
+    <circle cx="50" cy="50" r="45" fill="#673ab7" />
+
+    <!-- Simplified Mesh Network -->
+    <g stroke="#ffffff" stroke-width="2" fill="none">
+        <!-- Horizontal Lines -->
+        <line x1="20" y1="30" x2="80" y2="30" />
+        <line x1="20" y1="50" x2="80" y2="50" />
+        <line x1="20" y1="70" x2="80" y2="70" />
+
+        <!-- Vertical Lines -->
+        <line x1="30" y1="20" x2="30" y2="80" />
+        <line x1="50" y1="20" x2="50" y2="80" />
+        <line x1="70" y1="20" x2="70" y2="80" />
+    </g>
+
+    <!-- Connection Nodes -->
+    <g fill="#ffffff">
+        <circle cx="30" cy="30" r="3" />
+        <circle cx="50" cy="30" r="3" />
+        <circle cx="70" cy="30" r="3" />
+
+        <circle cx="30" cy="50" r="3" />
+        <circle cx="50" cy="50" r="4" /> <!-- Center node is larger -->
+        <circle cx="70" cy="50" r="3" />
+
+        <circle cx="30" cy="70" r="3" />
+        <circle cx="50" cy="70" r="3" />
+        <circle cx="70" cy="70" r="3" />
+    </g>
+
+    <!-- Lightning Bolt (Fury) -->
+    <path d="M40,20 L30,45 L40,45 L30,80" stroke="#ffeb3b" stroke-width="3" fill="none" stroke-linecap="round"
+        stroke-linejoin="round" />
+</svg>
