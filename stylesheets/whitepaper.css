@@ -1,0 +1,128 @@
+/* Whitepaper specific styles */
+
+/* Typography */
+.md-content article h1 {
+  font-size: 2.5rem;
+  text-align: center;
+  margin-bottom: 2rem;
+  color: var(--md-primary-fg-color);
+}
+
+.md-content article h2 {
+  font-size: 1.8rem;
+  border-bottom: 2px solid var(--md-primary-fg-color--light);
+  padding-bottom: 0.5rem;
+  margin-top: 2.5rem;
+}
+
+.md-content article h3 {
+  font-size: 1.4rem;
+  margin-top: 1.8rem;
+}
+
+.md-content article h4 {
+  font-size: 1.2rem;
+  color: var(--md-primary-fg-color);
+}
+
+/* Abstract styling */
+.md-content article p:nth-of-type(1) {
+  font-style: italic;
+  border-left: 4px solid var(--md-primary-fg-color);
+  padding-left: 1rem;
+  margin: 2rem 0;
+}
+
+/* Code blocks */
+.md-content article pre {
+  background-color: #f8f8f8;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+}
+
+/* Tables */
+.md-content article table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 2rem 0;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+.md-content article table th {
+  background-color: var(--md-primary-fg-color);
+  color: white;
+  padding: 0.8rem;
+  text-align: left;
+}
+
+.md-content article table td {
+  padding: 0.8rem;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.md-content article table tr:nth-child(even) {
+  background-color: #f8f8f8;
+}
+
+/* References */
+.md-content article ol {
+  padding-left: 1.5rem;
+}
+
+.md-content article ol li {
+  margin-bottom: 0.5rem;
+}
+
+/* Diagrams */
+.md-content article pre:has(code:not([class])) {
+  background-color: transparent;
+  border: none;
+  font-family: monospace;
+  line-height: 1.2;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+/* Print styles */
+@media print {
+  .md-content article {
+    font-size: 12pt;
+    line-height: 1.5;
+  }
+  
+  .md-content article h1 {
+    font-size: 24pt;
+    margin-bottom: 1.5rem;
+  }
+  
+  .md-content article h2 {
+    font-size: 18pt;
+    margin-top: 2rem;
+  }
+  
+  .md-content article h3 {
+    font-size: 14pt;
+    margin-top: 1.5rem;
+  }
+  
+  .md-content article pre,
+  .md-content article code {
+    font-size: 10pt;
+  }
+  
+  .md-content article table {
+    page-break-inside: avoid;
+  }
+  
+  .md-content article p,
+  .md-content article ul,
+  .md-content article ol {
+    page-break-inside: avoid;
+  }
+  
+  .md-content article h2,
+  .md-content article h3,
+  .md-content article h4 {
+    page-break-after: avoid;
+  }
+} 
