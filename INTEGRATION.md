@@ -113,3 +113,4 @@ The node integration allows the file transfer system to:
 4. **Resume Support**: Add support for resuming interrupted transfers.
 5. **Web Interface**: Create a web interface for managing file transfers.
 6. **Mobile Support**: Extend the system to work on mobile devices.
+

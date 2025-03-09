@@ -282,8 +282,18 @@ func (sm *StorageManager) CleanupExpiredFiles(maxAge time.Duration) error {
 	expiredCount := 0
 
 	for fileID, metadata := range sm.metadataCache {
-		// Check if file has expired
-		fileAge := now.Sub(time.Unix(0, 0)) // TODO: Add creation time to metadata
+		// Check if file has expired by looking at the file's modification time
+		metadataPath := filepath.Join(sm.metadataDir, fmt.Sprintf("%s.json", fileID))
+		fileInfo, err := os.Stat(metadataPath)
+		if err != nil {
+			sm.logger.Warn("Failed to get file info",
+				zap.String("file_id", fileID),
+				zap.String("path", metadataPath),
+				zap.Error(err))
+			continue
+		}
+
+		fileAge := now.Sub(fileInfo.ModTime())
 		if fileAge > maxAge {
 			// Delete chunks
 			chunkDir := filepath.Join(sm.chunksDir, fileID)
@@ -295,7 +305,6 @@ func (sm *StorageManager) CleanupExpiredFiles(maxAge time.Duration) error {
 			}
 
 			// Delete metadata file
-			metadataPath := filepath.Join(sm.metadataDir, fmt.Sprintf("%s.json", fileID))
 			if err := os.Remove(metadataPath); err != nil && !os.IsNotExist(err) {
 				sm.logger.Warn("Failed to delete metadata file",
 					zap.String("file_id", fileID),

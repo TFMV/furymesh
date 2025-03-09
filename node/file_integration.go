@@ -202,6 +202,11 @@ func (fm *FileManager) cleanupCompletedTransfers() {
 func (fm *FileManager) handlePeerConnected(peerID string) {
 	fm.logger.Info("Peer connected", zap.String("peer_id", peerID))
 
+	// Initialize peer files map
+	fm.peerFilesMu.Lock()
+	fm.peerFiles[peerID] = []string{}
+	fm.peerFilesMu.Unlock()
+
 	// Send our available files to the peer
 	go fm.sendAvailableFiles(peerID)
 }
@@ -363,6 +368,26 @@ func (fm *FileManager) RequestFileFromPeer(ctx context.Context, peerID, fileID s
 	_, err := fm.storageManager.GetMetadata(fileID)
 	if err == nil {
 		return fmt.Errorf("file already exists locally")
+	}
+
+	// Check if the peer exists
+	fm.peerFilesMu.RLock()
+	peerFiles, peerExists := fm.peerFiles[peerID]
+	fm.peerFilesMu.RUnlock()
+	if !peerExists {
+		return fmt.Errorf("peer not connected: %s", peerID)
+	}
+
+	// Check if the peer has the file
+	fileExists := false
+	for _, f := range peerFiles {
+		if f == fileID {
+			fileExists = true
+			break
+		}
+	}
+	if !fileExists {
+		return fmt.Errorf("file not available from peer: %s", fileID)
 	}
 
 	// Request the file

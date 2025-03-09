@@ -8,17 +8,20 @@ FuryMesh leverages WebRTC data channels to create a mesh network of peers that c
 
 ## Features
 
-- **WebRTC-based P2P Communication**: Direct peer-to-peer connections for efficient data transfer
-- **Decentralized Architecture**: No central server required for file transfers
-- **FlatBuffers Serialization**: Efficient binary protocol for message exchange
-- **CLI Interface**: Easy-to-use command line interface for managing nodes and transfers
-- **Monitoring API**: HTTP API for monitoring node status and network health
-- **Enterprise-Grade File Transfer**: Robust file chunking, transfer, and reassembly with integrity verification
-- **Persistent Storage**: Reliable storage of file chunks and metadata
-- **Transfer Management**: Advanced transfer tracking with statistics and retry mechanisms
-- **WebRTC Integration**: Seamless peer discovery and connection management
-- **End-to-End Encryption**: Secure file transfers with RSA key exchange and AES-256 encryption
-- **DHT-based Peer Discovery**: Kademlia distributed hash table for efficient peer discovery without central servers
+| Category | Feature | Description |
+|----------|---------|-------------|
+| **Core Technology** | WebRTC-based P2P Communication | Direct peer-to-peer connections for efficient data transfer |
+| | Decentralized Architecture | No central server required for file transfers |
+| | FlatBuffers Serialization | Efficient binary protocol for message exchange |
+| **Security** | End-to-End Encryption | Secure file transfers with RSA key exchange and AES-256 encryption |
+| | Integrity Verification | SHA-256 hashing for chunk and file verification |
+| **Networking** | DHT-based Peer Discovery | Kademlia distributed hash table for efficient peer discovery |
+| | WebRTC Integration | Seamless peer discovery and connection management |
+| **File Management** | Enterprise-Grade File Transfer | Robust file chunking, transfer, and reassembly |
+| | Persistent Storage | Reliable storage of file chunks and metadata |
+| | Transfer Management | Advanced transfer tracking with statistics and retry mechanisms |
+| **User Interface** | CLI Interface | Easy-to-use command line interface for managing nodes and transfers |
+| | Monitoring API | HTTP API for monitoring node status and network health |
 
 ## Components
 

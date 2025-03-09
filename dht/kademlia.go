@@ -263,7 +263,13 @@ func (rt *RoutingTable) FindClosestContacts(target NodeID, count int) []*Contact
 // getBucketIndex returns the index of the bucket for the given ID
 func (rt *RoutingTable) getBucketIndex(id NodeID) int {
 	distance := rt.localID.Distance(id)
-	return distance.PrefixLen()
+	prefixLen := distance.PrefixLen()
+
+	// Ensure the bucket index is within bounds
+	if prefixLen >= IDLength*8 {
+		return IDLength*8 - 1
+	}
+	return prefixLen
 }
 
 // Size returns the total number of contacts in the routing table
