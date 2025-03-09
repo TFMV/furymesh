@@ -1,5 +1,9 @@
 # FuryMesh
 
+<div align="center">
+  <img src="assets/logo.svg" alt="FuryMesh Logo" width="300" />
+</div>
+
 FuryMesh is a peer-to-peer file sharing system built on WebRTC technology, enabling direct browser-to-browser communication for efficient and decentralized file transfers.
 
 ## Overview
