@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/TFMV/furymesh/crypto"
 	"github.com/TFMV/furymesh/file"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
@@ -86,6 +87,27 @@ func NewFileManager(logger *zap.Logger) (*FileManager, error) {
 		return nil, fmt.Errorf("failed to create storage manager: %w", err)
 	}
 
+	// Initialize encryption manager if enabled
+	var encryptionMgr *crypto.EncryptionManager
+	if viper.GetBool("encryption.enabled") {
+		keysDir := viper.GetString("encryption.keys_dir")
+		if keysDir == "" {
+			homeDir, err := filepath.Abs(".")
+			if err != nil {
+				return nil, fmt.Errorf("failed to get current directory: %w", err)
+			}
+			keysDir = filepath.Join(homeDir, ".furymesh", "keys")
+		}
+
+		var err error
+		encryptionMgr, err = crypto.NewEncryptionManager(logger, keysDir)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize encryption manager: %w", err)
+		}
+
+		logger.Info("Encryption enabled", zap.String("keys_dir", keysDir))
+	}
+
 	// Create transfer manager
 	transferManager := file.NewTransferManager(
 		logger,
@@ -94,6 +116,7 @@ func NewFileManager(logger *zap.Logger) (*FileManager, error) {
 		requestTimeout,
 		maxRetries,
 		concurrentTransfers,
+		encryptionMgr, // Pass the encryption manager (can be nil if encryption is disabled)
 	)
 
 	// Create WebRTC transport

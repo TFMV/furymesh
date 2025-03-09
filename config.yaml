@@ -43,6 +43,40 @@ webrtc:
     - "srflx"
     - "relay"
 
+# DHT configuration
+dht:
+  # Enable DHT-based peer discovery
+  enabled: true
+  # Address to bind the DHT node to
+  address: "0.0.0.0"
+  # Port to use for DHT communication
+  port: 8000
+  # Bootstrap nodes to connect to
+  bootstrap_nodes:
+    - "bootstrap1.furymesh.example:8000"
+    - "bootstrap2.furymesh.example:8000"
+  # Refresh interval for DHT buckets in minutes
+  refresh_interval: 60
+  # Replication interval for DHT keys in minutes
+  replication_interval: 60
+  # Republish interval for DHT keys in hours
+  republish_interval: 24
+  # Expire time for DHT keys in hours
+  expire_time: 24
+
+# Encryption configuration
+encryption:
+  # Enable end-to-end encryption
+  enabled: true
+  # Directory to store encryption keys
+  keys_dir: "~/.furymesh/keys"
+  # Key size in bits (2048, 3072, or 4096)
+  key_size: 2048
+  # Session key size in bits (128, 192, or 256)
+  session_key_size: 256
+  # Cipher mode (GCM or CBC)
+  cipher_mode: "GCM"
+
 compression:
   enabled: true
   algorithm: "zstd"

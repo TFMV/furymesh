@@ -2,13 +2,19 @@ package node
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
 
+	"github.com/TFMV/furymesh/dht"
+	"github.com/TFMV/furymesh/file"
 	"github.com/pion/webrtc/v3"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
@@ -16,28 +22,104 @@ import (
 
 // Node represents a FuryMesh P2P node
 type Node struct {
-	logger      *zap.Logger
-	fileManager *FileManager
-	ctx         context.Context
-	cancel      context.CancelFunc
-	wg          sync.WaitGroup
+	logger       *zap.Logger
+	fileManager  *FileManager
+	ctx          context.Context
+	cancel       context.CancelFunc
+	wg           sync.WaitGroup
+	dhtNode      *dht.KademliaNode
+	dhtTransport *dht.TCPTransport
 }
 
 // NewNode creates a new Node instance
 func NewNode(logger *zap.Logger, fileManager *FileManager) (*Node, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	return &Node{
+	// Create a new node
+	node := &Node{
 		logger:      logger,
 		fileManager: fileManager,
 		ctx:         ctx,
 		cancel:      cancel,
-	}, nil
+	}
+
+	// Initialize DHT if enabled in config
+	if viper.GetBool("dht.enabled") {
+		// Get DHT configuration
+		address := viper.GetString("dht.address")
+		if address == "" {
+			address = "0.0.0.0" // Default to all interfaces
+		}
+
+		port := viper.GetInt("dht.port")
+		if port == 0 {
+			port = 8000 // Default port
+		}
+
+		// Get bootstrap nodes
+		bootstrapNodesConfig := viper.GetStringSlice("dht.bootstrap_nodes")
+		var bootstrapNodes []*dht.Contact
+
+		for _, nodeAddr := range bootstrapNodesConfig {
+			parts := strings.Split(nodeAddr, ":")
+			if len(parts) != 2 {
+				logger.Warn("Invalid bootstrap node address", zap.String("address", nodeAddr))
+				continue
+			}
+
+			host := parts[0]
+			port, err := strconv.Atoi(parts[1])
+			if err != nil {
+				logger.Warn("Invalid port in bootstrap node address",
+					zap.String("address", nodeAddr),
+					zap.Error(err))
+				continue
+			}
+
+			// Create a node ID based on the address
+			id := dht.NewNodeID(nodeAddr)
+			contact := dht.NewContact(id, host, port)
+			bootstrapNodes = append(bootstrapNodes, contact)
+		}
+
+		// Create the DHT node
+		dhtNode, err := dht.NewKademliaNode(logger, address, port, bootstrapNodes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create DHT node: %w", err)
+		}
+
+		// Create the DHT transport
+		dhtTransport := dht.NewTCPTransport(dhtNode, logger)
+
+		// Set the transport on the DHT node
+		dhtNode.RPCClient = dhtTransport
+
+		node.dhtNode = dhtNode
+		node.dhtTransport = dhtTransport
+
+		logger.Info("DHT node initialized",
+			zap.String("address", address),
+			zap.Int("port", port),
+			zap.Int("bootstrap_nodes", len(bootstrapNodes)))
+	}
+
+	return node, nil
 }
 
 // Start starts the node
 func (n *Node) Start() error {
 	n.logger.Info("Starting FuryMesh node")
+
+	// Start the DHT node if enabled
+	if n.dhtNode != nil {
+		n.logger.Info("Starting DHT node")
+
+		// Bootstrap the DHT node
+		if err := n.dhtNode.Bootstrap(); err != nil {
+			n.logger.Warn("Failed to bootstrap DHT node", zap.Error(err))
+			// Continue anyway, as we might still be able to operate
+		}
+	}
 
 	// Set up signal handling for graceful shutdown
 	sigCh := make(chan os.Signal, 1)
@@ -79,13 +161,98 @@ func (n *Node) run() {
 		case <-ticker.C:
 			// Periodic maintenance tasks
 			n.logger.Debug("Performing periodic maintenance")
+
+			// Announce available files to the DHT if enabled
+			if n.dhtNode != nil {
+				n.announceFilesToDHT()
+			}
 		}
 	}
+}
+
+// announceFilesToDHT announces available files to the DHT
+func (n *Node) announceFilesToDHT() {
+	// Get available files
+	files := n.fileManager.ListAvailableFiles()
+
+	for _, metadata := range files {
+		// Create a key for the file
+		key := []byte("file:" + metadata.FileID)
+
+		// Create a value with file metadata
+		value, err := json.Marshal(metadata)
+		if err != nil {
+			n.logger.Error("Failed to marshal file metadata",
+				zap.String("file_id", metadata.FileID),
+				zap.Error(err))
+			continue
+		}
+
+		// Store the file metadata in the DHT
+		if err := n.dhtNode.Store(key, value); err != nil {
+			n.logger.Error("Failed to announce file to DHT",
+				zap.String("file_id", metadata.FileID),
+				zap.Error(err))
+			continue
+		}
+
+		n.logger.Debug("Announced file to DHT",
+			zap.String("file_id", metadata.FileID))
+	}
+}
+
+// FindFileInDHT finds a file in the DHT by its ID
+func (n *Node) FindFileInDHT(fileID string) (*file.ChunkMetadata, error) {
+	if n.dhtNode == nil {
+		return nil, errors.New("DHT is not enabled")
+	}
+
+	// Create a key for the file
+	key := []byte("file:" + fileID)
+
+	// Find the file in the DHT
+	value, err := n.dhtNode.FindValue(key)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find file in DHT: %w", err)
+	}
+
+	// Unmarshal the file metadata
+	var metadata file.ChunkMetadata
+	if err := json.Unmarshal(value, &metadata); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal file metadata: %w", err)
+	}
+
+	return &metadata, nil
+}
+
+// FindPeersInDHT finds peers in the DHT
+func (n *Node) FindPeersInDHT(targetID string) ([]*dht.Contact, error) {
+	if n.dhtNode == nil {
+		return nil, errors.New("DHT is not enabled")
+	}
+
+	// Create a target ID
+	target := dht.NewNodeID(targetID)
+
+	// Find nodes in the DHT
+	contacts, err := n.dhtNode.FindNode(target)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find peers in DHT: %w", err)
+	}
+
+	return contacts, nil
 }
 
 // Stop stops the node
 func (n *Node) Stop() {
 	n.logger.Info("Stopping node")
+
+	// Stop the DHT node if enabled
+	if n.dhtNode != nil {
+		n.logger.Info("Stopping DHT node")
+		n.dhtNode.Stop()
+	}
+
 	n.cancel()
 	n.Wait()
 }

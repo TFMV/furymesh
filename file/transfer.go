@@ -2,11 +2,13 @@ package file
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
+	"github.com/TFMV/furymesh/crypto"
 	"go.uber.org/zap"
 )
 
@@ -71,16 +73,36 @@ type TransferRequest struct {
 
 // DataRequest represents a request for a specific chunk of data
 type DataRequest struct {
-	RequestID string `json:"request_id"`
-	FileID    string `json:"file_id"`
+	RequestID    string    `json:"request_id"`
+	FileID       string    `json:"file_id"`
+	ChunkIndex   int       `json:"chunk_index"`
+	PeerID       string    `json:"peer_id"`
+	Timestamp    time.Time `json:"timestamp"`
+	IsKeyRequest bool      `json:"is_key_request"`
 }
 
 // DataResponse represents a response containing a chunk of data
 type DataResponse struct {
-	RequestID string         `json:"request_id"`
-	FileID    string         `json:"file_id"`
-	Chunk     *FileChunkData `json:"chunk"`
+	RequestID     string         `json:"request_id"`
+	FileID        string         `json:"file_id"`
+	Chunk         *FileChunkData `json:"chunk"`
+	EncryptedKey  []byte         `json:"encrypted_key"`
+	IsKeyResponse bool           `json:"is_key_response"`
 }
+
+// ChunkStatus represents the status of a chunk
+type ChunkStatus int
+
+const (
+	// ChunkStatusPending indicates the chunk is pending transfer
+	ChunkStatusPending ChunkStatus = iota
+	// ChunkStatusInProgress indicates the chunk is being transferred
+	ChunkStatusInProgress
+	// ChunkStatusTransferred indicates the chunk has been transferred
+	ChunkStatusTransferred
+	// ChunkStatusFailed indicates the chunk transfer failed
+	ChunkStatusFailed
+)
 
 // TransferManager handles file transfers between peers
 type TransferManager struct {
@@ -105,6 +127,10 @@ type TransferManager struct {
 	// Context for cancellation
 	ctx    context.Context
 	cancel context.CancelFunc
+
+	encryptionMgr *crypto.EncryptionManager
+	sessionKeys   map[string][]byte
+	sessionKeysMu sync.RWMutex
 }
 
 // NewTransferManager creates a new TransferManager
@@ -115,6 +141,7 @@ func NewTransferManager(
 	requestTimeout time.Duration,
 	maxRetries int,
 	concurrentTransfers int,
+	encryptionMgr *crypto.EncryptionManager,
 ) *TransferManager {
 	if requestTimeout <= 0 {
 		requestTimeout = DefaultRequestTimeout
@@ -140,6 +167,8 @@ func NewTransferManager(
 		dataResponseCh:      make(chan *DataResponse, 100),
 		ctx:                 ctx,
 		cancel:              cancel,
+		encryptionMgr:       encryptionMgr,
+		sessionKeys:         make(map[string][]byte),
 	}
 }
 
@@ -178,82 +207,156 @@ func (tm *TransferManager) transferWorker(workerID int) {
 	}
 }
 
-// RequestDataChunk sends a request for a specific chunk of a file
-func (tm *TransferManager) RequestDataChunk(ctx context.Context, peerID, fileID string, chunkIndex int) error {
-	// Create a unique request ID
-	requestID := fmt.Sprintf("%s-%s-%d", peerID, fileID, chunkIndex)
-
-	// Create a DataRequest
+// RequestDataChunk requests a chunk of data from a peer
+func (tm *TransferManager) RequestDataChunk(peerID, fileID string, chunkIndex int) error {
+	// Create a request
 	request := &DataRequest{
-		RequestID: requestID,
-		FileID:    fileID,
+		RequestID:  fmt.Sprintf("%s-%s-%d", peerID, fileID, chunkIndex),
+		FileID:     fileID,
+		ChunkIndex: chunkIndex,
+		PeerID:     peerID,
+		Timestamp:  time.Now(),
+	}
+
+	// Check if we have a session key for this file
+	if tm.encryptionMgr != nil {
+		tm.sessionKeysMu.RLock()
+		_, hasSessionKey := tm.sessionKeys[fileID]
+		tm.sessionKeysMu.RUnlock()
+
+		// If we don't have a session key, request it first
+		if !hasSessionKey {
+			tm.logger.Debug("No session key found, requesting key first",
+				zap.String("file_id", fileID),
+				zap.String("peer_id", peerID))
+
+			// Create a key request
+			keyRequest := &DataRequest{
+				RequestID:    fmt.Sprintf("%s-%s-key", peerID, fileID),
+				FileID:       fileID,
+				ChunkIndex:   -1, // Special value for key request
+				PeerID:       peerID,
+				Timestamp:    time.Now(),
+				IsKeyRequest: true,
+			}
+
+			// Send the key request
+			select {
+			case tm.dataRequestCh <- keyRequest:
+				tm.logger.Debug("Sent session key request",
+					zap.String("file_id", fileID),
+					zap.String("peer_id", peerID))
+			default:
+				return fmt.Errorf("request channel full")
+			}
+
+			// Wait for the key to be received
+			// In a real implementation, this would be more sophisticated
+			time.Sleep(500 * time.Millisecond)
+		}
 	}
 
 	// Send the request
 	select {
 	case tm.dataRequestCh <- request:
-		tm.logger.Debug("Data request sent",
-			zap.String("request_id", requestID),
+		tm.logger.Debug("Sent data chunk request",
 			zap.String("file_id", fileID),
-			zap.String("peer_id", peerID),
-			zap.Int("chunk_index", chunkIndex))
+			zap.Int("chunk_index", chunkIndex),
+			zap.String("peer_id", peerID))
 		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-tm.ctx.Done():
-		return errors.New("transfer manager is shutting down")
+	default:
+		return fmt.Errorf("request channel full")
 	}
 }
 
-// handleDataResponse processes a data response from a peer
+// handleDataResponse processes a data response
 func (tm *TransferManager) handleDataResponse(response *DataResponse) {
-	// Extract data from the response
-	requestID := response.RequestID
+	// Extract the file ID and chunk index
 	fileID := response.FileID
-	chunk := response.Chunk
 
+	// Check if this is a session key response
+	if response.IsKeyResponse && tm.encryptionMgr != nil {
+		tm.logger.Debug("Received session key response",
+			zap.String("file_id", fileID))
+
+		// Decrypt the session key
+		sessionKey, err := tm.encryptionMgr.DecryptSessionKey(response.EncryptedKey)
+		if err != nil {
+			tm.logger.Error("Failed to decrypt session key",
+				zap.String("file_id", fileID),
+				zap.Error(err))
+			return
+		}
+
+		// Store the session key
+		tm.sessionKeysMu.Lock()
+		tm.sessionKeys[fileID] = sessionKey
+		tm.sessionKeysMu.Unlock()
+
+		tm.logger.Info("Received and stored session key",
+			zap.String("file_id", fileID))
+		return
+	}
+
+	// Regular chunk response
+	chunk := response.Chunk
 	if chunk == nil {
-		tm.logger.Error("Received data response with nil chunk",
-			zap.String("request_id", requestID),
+		tm.logger.Error("Received nil chunk in data response",
 			zap.String("file_id", fileID))
 		return
 	}
 
 	chunkIndex := int(chunk.Index)
 
-	tm.logger.Debug("Received data response",
-		zap.String("request_id", requestID),
+	tm.logger.Debug("Received data chunk response",
 		zap.String("file_id", fileID),
-		zap.Int("chunk_index", chunkIndex),
-		zap.Int("data_size", len(chunk.Data)))
+		zap.Int("chunk_index", chunkIndex))
 
-	// Update transfer stats
-	tm.updateTransferStats(fileID, len(chunk.Data), 1, 0)
-}
-
-// updateTransferStats updates the statistics for a transfer
-func (tm *TransferManager) updateTransferStats(
-	fileID string,
-	bytesTransferred int,
-	chunksTransferred int,
-	failedChunks int,
-) {
+	// Get the transfer
 	tm.transfersMu.Lock()
-	defer tm.transfersMu.Unlock()
-
 	stats, exists := tm.activeTransfers[fileID]
 	if !exists {
-		// This might be a response for a transfer that was cancelled or completed
+		tm.logger.Warn("Received data for unknown transfer",
+			zap.String("file_id", fileID),
+			zap.Int("chunk_index", chunkIndex))
+		tm.transfersMu.Unlock()
 		return
 	}
 
-	// Update stats
-	stats.BytesTransferred += int64(bytesTransferred)
-	stats.ChunksTransferred += chunksTransferred
-	stats.FailedChunks += failedChunks
+	// Decrypt the chunk if encryption is enabled
+	var chunkData []byte
+	if tm.encryptionMgr != nil {
+		tm.sessionKeysMu.RLock()
+		sessionKey, hasKey := tm.sessionKeys[fileID]
+		tm.sessionKeysMu.RUnlock()
 
-	// Check if transfer is complete
-	if stats.ChunksTransferred == stats.TotalChunks {
+		if !hasKey {
+			tm.logger.Error("No session key found for decryption",
+				zap.String("file_id", fileID))
+			tm.transfersMu.Unlock()
+			return
+		}
+
+		var err error
+		chunkData, err = tm.encryptionMgr.DecryptChunk(chunk.Data, sessionKey)
+		if err != nil {
+			tm.logger.Error("Failed to decrypt chunk",
+				zap.String("file_id", fileID),
+				zap.Int("chunk_index", chunkIndex),
+				zap.Error(err))
+			tm.transfersMu.Unlock()
+			return
+		}
+	} else {
+		chunkData = chunk.Data
+	}
+
+	// Update the transfer status
+	stats.BytesTransferred += int64(len(chunkData))
+	stats.ChunksTransferred++
+
+	// Check if the transfer is complete
+	if stats.ChunksTransferred >= stats.TotalChunks {
 		stats.Status = TransferStatusCompleted
 		stats.EndTime = time.Now()
 
@@ -265,36 +368,63 @@ func (tm *TransferManager) updateTransferStats(
 
 		tm.logger.Info("Transfer completed",
 			zap.String("file_id", fileID),
-			zap.Int64("bytes_transferred", stats.BytesTransferred),
 			zap.Int("chunks_transferred", stats.ChunksTransferred),
+			zap.Int("total_chunks", stats.TotalChunks),
 			zap.Float64("transfer_rate_bps", stats.TransferRate))
 	}
+
+	tm.transfersMu.Unlock()
+
+	// Save the chunk data
+	chunkDir := filepath.Join(tm.workDir, fileID)
+	if err := os.MkdirAll(chunkDir, 0755); err != nil {
+		tm.logger.Error("Failed to create chunk directory",
+			zap.String("file_id", fileID),
+			zap.Error(err))
+		return
+	}
+
+	chunkPath := filepath.Join(chunkDir, fmt.Sprintf("%d.chunk", chunkIndex))
+	if err := os.WriteFile(chunkPath, chunkData, 0644); err != nil {
+		tm.logger.Error("Failed to write chunk file",
+			zap.String("file_id", fileID),
+			zap.Int("chunk_index", chunkIndex),
+			zap.Error(err))
+		return
+	}
+
+	tm.logger.Debug("Saved chunk data",
+		zap.String("file_id", fileID),
+		zap.Int("chunk_index", chunkIndex),
+		zap.Int("data_size", len(chunkData)))
 }
 
-// StartUpload initiates an upload transfer
+// StartUpload starts an upload transfer
 func (tm *TransferManager) StartUpload(ctx context.Context, peerID string, fileID string) (*TransferStats, error) {
-	// Get file metadata
+	// Get metadata for the file
 	metadata, err := tm.chunker.GetFileMetadata(fileID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get file metadata: %w", err)
 	}
 
-	// Create transfer stats
-	stats := &TransferStats{
-		StartTime:         time.Now(),
-		TotalBytes:        metadata.FileSize,
-		TotalChunks:       metadata.TotalChunks,
-		Status:            TransferStatusInProgress,
-		BytesTransferred:  0,
-		ChunksTransferred: 0,
-		FailedChunks:      0,
-		RetryCount:        0,
+	tm.transfersMu.Lock()
+	defer tm.transfersMu.Unlock()
+
+	// Check if the transfer already exists
+	if stats, exists := tm.activeTransfers[fileID]; exists {
+		return stats, nil
 	}
 
-	// Register the transfer
-	tm.transfersMu.Lock()
+	// Create a new transfer
+	stats := &TransferStats{
+		StartTime:   time.Now(),
+		TotalBytes:  metadata.FileSize,
+		TotalChunks: metadata.TotalChunks,
+		Status:      TransferStatusInProgress,
+	}
+
+	// Store the transfer
 	tm.activeTransfers[fileID] = stats
-	tm.transfersMu.Unlock()
 
 	tm.logger.Info("Starting upload",
 		zap.String("file_id", fileID),
@@ -303,170 +433,45 @@ func (tm *TransferManager) StartUpload(ctx context.Context, peerID string, fileI
 		zap.Int64("file_size", metadata.FileSize),
 		zap.Int("total_chunks", metadata.TotalChunks))
 
-	// Start a goroutine to handle the upload
-	go func() {
-		defer func() {
-			// If the transfer is still in progress when this goroutine exits,
-			// mark it as failed
-			tm.transfersMu.Lock()
-			if stats.Status == TransferStatusInProgress {
-				stats.Status = TransferStatusFailed
-				stats.EndTime = time.Now()
-				stats.Error = "upload was interrupted"
-			}
-			tm.transfersMu.Unlock()
-		}()
-
-		// Create a context with timeout for the entire upload
-		uploadCtx, cancel := context.WithTimeout(tm.ctx, tm.requestTimeout*time.Duration(metadata.TotalChunks))
-		defer cancel()
-
-		// Process each chunk
-		for i := 0; i < metadata.TotalChunks; i++ {
-			// Check if the upload has been cancelled
-			select {
-			case <-uploadCtx.Done():
-				tm.logger.Warn("Upload cancelled or timed out",
-					zap.String("file_id", fileID),
-					zap.String("peer_id", peerID),
-					zap.Error(uploadCtx.Err()))
-				return
-			default:
-				// Continue with the upload
-			}
-
-			// Get the chunk
-			chunk, err := tm.chunker.GetChunk(fileID, i)
-			if err != nil {
-				tm.logger.Error("Failed to get chunk",
-					zap.String("file_id", fileID),
-					zap.Int("chunk_index", i),
-					zap.Error(err))
-
-				tm.transfersMu.Lock()
-				stats.FailedChunks++
-				tm.transfersMu.Unlock()
-				continue
-			}
-
-			// TODO: Implement the actual sending of the chunk to the peer
-			// This would typically involve serializing the chunk using FlatBuffers
-			// and sending it over a WebRTC data channel
-
-			// For now, we'll just update the stats
-			tm.updateTransferStats(fileID, len(chunk.Data), 1, 0)
-
-			// Add a small delay to simulate network latency
-			time.Sleep(10 * time.Millisecond)
-		}
-	}()
-
 	return stats, nil
 }
 
 // StartDownload initiates a download transfer
 func (tm *TransferManager) StartDownload(ctx context.Context, peerID string, fileID string, fileName string, totalChunks int, fileSize int64) (*TransferStats, error) {
-	// Create transfer stats
-	stats := &TransferStats{
-		StartTime:         time.Now(),
-		TotalBytes:        fileSize,
-		TotalChunks:       totalChunks,
-		Status:            TransferStatusInProgress,
-		BytesTransferred:  0,
-		ChunksTransferred: 0,
-		FailedChunks:      0,
-		RetryCount:        0,
+	tm.transfersMu.Lock()
+	defer tm.transfersMu.Unlock()
+
+	// Check if the transfer already exists
+	if stats, exists := tm.activeTransfers[fileID]; exists {
+		return stats, nil
 	}
 
-	// Register the transfer
-	tm.transfersMu.Lock()
+	// Create a new transfer
+	stats := &TransferStats{
+		StartTime:   time.Now(),
+		TotalBytes:  fileSize,
+		TotalChunks: totalChunks,
+		Status:      TransferStatusInProgress,
+	}
+
+	// Store the transfer
 	tm.activeTransfers[fileID] = stats
-	tm.transfersMu.Unlock()
 
-	tm.logger.Info("Starting download",
-		zap.String("file_id", fileID),
-		zap.String("peer_id", peerID),
-		zap.String("file_name", fileName),
-		zap.Int64("file_size", fileSize),
-		zap.Int("total_chunks", totalChunks))
-
-	// Start a goroutine to handle the download
+	// Start requesting chunks
 	go func() {
-		defer func() {
-			// If the transfer is still in progress when this goroutine exits,
-			// mark it as failed
-			tm.transfersMu.Lock()
-			if stats.Status == TransferStatusInProgress {
-				stats.Status = TransferStatusFailed
-				stats.EndTime = time.Now()
-				stats.Error = "download was interrupted"
-			}
-			tm.transfersMu.Unlock()
-		}()
-
-		// Create a context with timeout for the entire download
-		downloadCtx, cancel := context.WithTimeout(tm.ctx, tm.requestTimeout*time.Duration(totalChunks))
-		defer cancel()
-
-		// Request each chunk
 		for i := 0; i < totalChunks; i++ {
-			// Check if the download has been cancelled
-			select {
-			case <-downloadCtx.Done():
-				tm.logger.Warn("Download cancelled or timed out",
+			// Create a context with timeout for this chunk request
+			err := tm.RequestDataChunk(peerID, fileID, i)
+			if err != nil {
+				tm.logger.Error("Failed to request chunk",
 					zap.String("file_id", fileID),
-					zap.String("peer_id", peerID),
-					zap.Error(downloadCtx.Err()))
-				return
-			default:
-				// Continue with the download
-			}
-
-			// Request the chunk with retries
-			var success bool
-			for retry := 0; retry <= tm.maxRetries; retry++ {
-				// Create a context with timeout for this chunk request
-				chunkCtx, chunkCancel := context.WithTimeout(downloadCtx, tm.requestTimeout)
-
-				// Request the chunk
-				err := tm.RequestDataChunk(chunkCtx, peerID, fileID, i)
-				chunkCancel()
-
-				if err == nil {
-					success = true
-					break
-				}
-
-				tm.logger.Warn("Failed to request chunk, retrying",
-					zap.String("file_id", fileID),
-					zap.String("peer_id", peerID),
 					zap.Int("chunk_index", i),
-					zap.Int("retry", retry),
 					zap.Error(err))
-
-				tm.transfersMu.Lock()
-				stats.RetryCount++
-				tm.transfersMu.Unlock()
-
-				// Wait before retrying
-				select {
-				case <-downloadCtx.Done():
-					return
-				case <-time.After(time.Duration(retry*500) * time.Millisecond):
-					// Exponential backoff
-				}
+				continue
 			}
 
-			if !success {
-				tm.logger.Error("Failed to request chunk after retries",
-					zap.String("file_id", fileID),
-					zap.String("peer_id", peerID),
-					zap.Int("chunk_index", i))
-
-				tm.transfersMu.Lock()
-				stats.FailedChunks++
-				tm.transfersMu.Unlock()
-			}
+			// Sleep to avoid overwhelming the peer
+			time.Sleep(10 * time.Millisecond)
 		}
 	}()
 
