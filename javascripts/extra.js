@@ -163,4 +163,68 @@ document.addEventListener('DOMContentLoaded', function() {
     
     headerRight.parentNode.insertBefore(versionSelect, headerRight);
   }
-}); 
+
+  // Enhance mobile navigation
+  enhanceMobileNavigation();
+});
+
+// Function to enhance mobile navigation
+function enhanceMobileNavigation() {
+  // Check if we're on mobile
+  const isMobile = window.matchMedia("(max-width: 76.1875em)").matches;
+  
+  if (isMobile) {
+    // Ensure navigation is visible on mobile
+    const primarySidebar = document.querySelector('.md-sidebar--primary');
+    const secondarySidebar = document.querySelector('.md-sidebar--secondary');
+    
+    if (primarySidebar) {
+      primarySidebar.style.display = 'block';
+      primarySidebar.style.position = 'fixed';
+      primarySidebar.style.zIndex = '21';
+    }
+    
+    // Add a toggle button for mobile navigation if it doesn't exist
+    if (!document.querySelector('.mobile-nav-toggle')) {
+      const header = document.querySelector('.md-header__inner');
+      if (header) {
+        const toggleButton = document.createElement('button');
+        toggleButton.className = 'mobile-nav-toggle';
+        toggleButton.innerHTML = '<i class="fas fa-bars"></i>';
+        toggleButton.setAttribute('aria-label', 'Toggle navigation');
+        
+        // Insert before the search button
+        const searchButton = document.querySelector('.md-header__button.md-icon');
+        if (searchButton) {
+          header.insertBefore(toggleButton, searchButton);
+        } else {
+          header.appendChild(toggleButton);
+        }
+        
+        // Toggle navigation when button is clicked
+        toggleButton.addEventListener('click', function() {
+          if (primarySidebar) {
+            const isVisible = primarySidebar.classList.contains('md-sidebar--open');
+            if (isVisible) {
+              primarySidebar.classList.remove('md-sidebar--open');
+              toggleButton.innerHTML = '<i class="fas fa-bars"></i>';
+            } else {
+              primarySidebar.classList.add('md-sidebar--open');
+              toggleButton.innerHTML = '<i class="fas fa-times"></i>';
+            }
+          }
+        });
+        
+        // Close navigation when clicking outside
+        document.addEventListener('click', function(event) {
+          if (primarySidebar && primarySidebar.classList.contains('md-sidebar--open')) {
+            if (!primarySidebar.contains(event.target) && !toggleButton.contains(event.target)) {
+              primarySidebar.classList.remove('md-sidebar--open');
+              toggleButton.innerHTML = '<i class="fas fa-bars"></i>';
+            }
+          }
+        });
+      }
+    }
+  }
+} 
