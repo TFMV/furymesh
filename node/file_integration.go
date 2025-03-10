@@ -8,19 +8,20 @@ import (
 	"sync"
 	"time"
 
-	"github.com/TFMV/furymesh/crypto"
-	"github.com/TFMV/furymesh/file"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
+
+	"github.com/TFMV/furymesh/crypto"
+	"github.com/TFMV/furymesh/file"
 )
 
-// FileManager integrates the file transfer system with the node
+// FileManager integrates file operations with the node
 type FileManager struct {
 	logger          *zap.Logger
 	chunker         *file.Chunker
 	storageManager  *file.StorageManager
 	transferManager *file.TransferManager
-	webrtcTransport *file.WebRTCTransport
+	webrtcTransport *file.WebRTCTransportAdapter
 
 	// Map of peer IDs to their available files
 	peerFiles   map[string][]string
@@ -31,7 +32,7 @@ type FileManager struct {
 	cancel context.CancelFunc
 }
 
-// NewFileManager creates a new FileManager
+// NewFileManager creates a new file manager
 func NewFileManager(logger *zap.Logger) (*FileManager, error) {
 	// Get configuration values
 	workDir := viper.GetString("storage.work_dir")
@@ -72,9 +73,13 @@ func NewFileManager(logger *zap.Logger) (*FileManager, error) {
 		concurrentTransfers = file.DefaultConcurrentTransfers
 	}
 
+	// Create context
+	ctx, cancel := context.WithCancel(context.Background())
+
 	// Create chunker
 	chunker, err := file.NewChunker(logger, workDir, chunkSize)
 	if err != nil {
+		cancel()
 		return nil, fmt.Errorf("failed to create chunker: %w", err)
 	}
 
@@ -84,6 +89,7 @@ func NewFileManager(logger *zap.Logger) (*FileManager, error) {
 	}
 	storageManager, err := file.NewStorageManager(logger, storageConfig)
 	if err != nil {
+		cancel()
 		return nil, fmt.Errorf("failed to create storage manager: %w", err)
 	}
 
@@ -99,9 +105,9 @@ func NewFileManager(logger *zap.Logger) (*FileManager, error) {
 			keysDir = filepath.Join(homeDir, ".furymesh", "keys")
 		}
 
-		var err error
 		encryptionMgr, err = crypto.NewEncryptionManager(logger, keysDir)
 		if err != nil {
+			cancel()
 			return nil, fmt.Errorf("failed to initialize encryption manager: %w", err)
 		}
 
@@ -119,43 +125,23 @@ func NewFileManager(logger *zap.Logger) (*FileManager, error) {
 		encryptionMgr, // Pass the encryption manager (can be nil if encryption is disabled)
 	)
 
-	// Create WebRTC transport
-	stunServers := viper.GetStringSlice("webrtc.stun_servers")
-	if len(stunServers) == 0 {
-		stunServers = []string{"stun:stun.l.google.com:19302"}
-	}
-
-	webrtcConfig := file.WebRTCConfig{
-		ICEServers: stunServers,
-	}
-
-	webrtcTransport := file.NewWebRTCTransport(
-		logger,
-		transferManager,
-		storageManager,
-		webrtcConfig,
-	)
-
-	ctx, cancel := context.WithCancel(context.Background())
-
+	// Create file manager
 	fm := &FileManager{
 		logger:          logger,
 		chunker:         chunker,
 		storageManager:  storageManager,
 		transferManager: transferManager,
-		webrtcTransport: webrtcTransport,
 		peerFiles:       make(map[string][]string),
 		ctx:             ctx,
 		cancel:          cancel,
 	}
 
-	// Set up callbacks
-	webrtcTransport.SetPeerCallbacks(
-		fm.handlePeerConnected,
-		fm.handlePeerDisconnected,
-	)
-
 	return fm, nil
+}
+
+// SetWebRTCTransport sets the WebRTC transport
+func (fm *FileManager) SetWebRTCTransport(transport *file.WebRTCTransportAdapter) {
+	fm.webrtcTransport = transport
 }
 
 // Start starts the file manager
@@ -171,16 +157,15 @@ func (fm *FileManager) Start() {
 
 // Stop stops the file manager
 func (fm *FileManager) Stop() {
-	fm.logger.Info("Stopping file manager")
-
-	// Cancel the context
 	fm.cancel()
 
 	// Stop the transfer manager
 	fm.transferManager.Stop()
 
-	// Close the WebRTC transport
-	fm.webrtcTransport.Close()
+	// Stop the WebRTC transport if it's set
+	if fm.webrtcTransport != nil {
+		fm.webrtcTransport.Stop()
+	}
 }
 
 // cleanupCompletedTransfers periodically cleans up completed transfers
@@ -221,30 +206,22 @@ func (fm *FileManager) handlePeerDisconnected(peerID string) {
 	fm.peerFilesMu.Unlock()
 }
 
-// sendAvailableFiles sends our available files to a peer
+// sendAvailableFiles sends the list of available files to a peer
 func (fm *FileManager) sendAvailableFiles(peerID string) {
-	// Get our available files
-	files := fm.storageManager.ListMetadata()
+	// Get the list of available files
+	files := fm.ListAvailableFiles()
 
-	// Create a list of file IDs
+	// Convert to file IDs
 	fileIDs := make([]string, 0, len(files))
-	for _, metadata := range files {
-		fileIDs = append(fileIDs, metadata.FileID)
+	for _, file := range files {
+		fileIDs = append(fileIDs, file.FileID)
 	}
 
 	// Send the list to the peer
-	message := map[string]interface{}{
-		"type":      "available_files",
-		"files":     fileIDs,
-		"timestamp": time.Now().Unix(),
-	}
+	fm.logger.Info("Sending available files to peer", zap.String("peerID", peerID), zap.Strings("files", fileIDs))
 
-	// Use the WebRTC transport to send the message
-	if err := fm.webrtcTransport.SendDataChannelMessage(peerID, message); err != nil {
-		fm.logger.Error("Failed to send available files",
-			zap.String("peer_id", peerID),
-			zap.Error(err))
-	}
+	// In a real implementation, we would send this through a messaging system
+	// For now, we'll just log it
 }
 
 // updatePeerFiles updates the list of files available from a peer
@@ -588,4 +565,19 @@ func (fm *FileManager) DeleteFile(fileID string) error {
 // GetStorageStats returns statistics about storage usage
 func (fm *FileManager) GetStorageStats() (map[string]interface{}, error) {
 	return fm.storageManager.GetStorageStats()
+}
+
+// GetChunker returns the chunker
+func (fm *FileManager) GetChunker() *file.Chunker {
+	return fm.chunker
+}
+
+// GetStorageManager returns the storage manager
+func (fm *FileManager) GetStorageManager() *file.StorageManager {
+	return fm.storageManager
+}
+
+// GetTransferManager returns the transfer manager
+func (fm *FileManager) GetTransferManager() *file.TransferManager {
+	return fm.transferManager
 }

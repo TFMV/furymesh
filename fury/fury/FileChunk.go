@@ -41,7 +41,7 @@ func (rcv *FileChunk) Table() flatbuffers.Table {
 	return rcv._tab
 }
 
-func (rcv *FileChunk) Id() []byte {
+func (rcv *FileChunk) FileId() []byte {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(4))
 	if o != 0 {
 		return rcv._tab.ByteVector(o + rcv._tab.Pos)
@@ -49,32 +49,20 @@ func (rcv *FileChunk) Id() []byte {
 	return nil
 }
 
-func (rcv *FileChunk) Index() int32 {
+func (rcv *FileChunk) ChunkIndex() uint32 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
 	if o != 0 {
-		return rcv._tab.GetInt32(o + rcv._tab.Pos)
+		return rcv._tab.GetUint32(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *FileChunk) MutateIndex(n int32) bool {
-	return rcv._tab.MutateInt32Slot(6, n)
-}
-
-func (rcv *FileChunk) TotalChunks() int32 {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
-	if o != 0 {
-		return rcv._tab.GetInt32(o + rcv._tab.Pos)
-	}
-	return 0
-}
-
-func (rcv *FileChunk) MutateTotalChunks(n int32) bool {
-	return rcv._tab.MutateInt32Slot(8, n)
+func (rcv *FileChunk) MutateChunkIndex(n uint32) bool {
+	return rcv._tab.MutateUint32Slot(6, n)
 }
 
 func (rcv *FileChunk) Data(j int) byte {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
 	if o != 0 {
 		a := rcv._tab.Vector(o)
 		return rcv._tab.GetByte(a + flatbuffers.UOffsetT(j*1))
@@ -83,7 +71,7 @@ func (rcv *FileChunk) Data(j int) byte {
 }
 
 func (rcv *FileChunk) DataLength() int {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
 	if o != 0 {
 		return rcv._tab.VectorLen(o)
 	}
@@ -91,7 +79,7 @@ func (rcv *FileChunk) DataLength() int {
 }
 
 func (rcv *FileChunk) DataBytes() []byte {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
 	if o != 0 {
 		return rcv._tab.ByteVector(o + rcv._tab.Pos)
 	}
@@ -99,7 +87,7 @@ func (rcv *FileChunk) DataBytes() []byte {
 }
 
 func (rcv *FileChunk) MutateData(j int, n byte) bool {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
 	if o != 0 {
 		a := rcv._tab.Vector(o)
 		return rcv._tab.MutateByte(a+flatbuffers.UOffsetT(j*1), n)
@@ -107,23 +95,57 @@ func (rcv *FileChunk) MutateData(j int, n byte) bool {
 	return false
 }
 
+func (rcv *FileChunk) Hash() []byte {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
+	if o != 0 {
+		return rcv._tab.ByteVector(o + rcv._tab.Pos)
+	}
+	return nil
+}
+
+func (rcv *FileChunk) Encrypted() bool {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(12))
+	if o != 0 {
+		return rcv._tab.GetBool(o + rcv._tab.Pos)
+	}
+	return false
+}
+
+func (rcv *FileChunk) MutateEncrypted(n bool) bool {
+	return rcv._tab.MutateBoolSlot(12, n)
+}
+
+func (rcv *FileChunk) Compression() []byte {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(14))
+	if o != 0 {
+		return rcv._tab.ByteVector(o + rcv._tab.Pos)
+	}
+	return nil
+}
+
 func FileChunkStart(builder *flatbuffers.Builder) {
-	builder.StartObject(4)
+	builder.StartObject(6)
 }
-func FileChunkAddId(builder *flatbuffers.Builder, id flatbuffers.UOffsetT) {
-	builder.PrependUOffsetTSlot(0, flatbuffers.UOffsetT(id), 0)
+func FileChunkAddFileId(builder *flatbuffers.Builder, fileId flatbuffers.UOffsetT) {
+	builder.PrependUOffsetTSlot(0, flatbuffers.UOffsetT(fileId), 0)
 }
-func FileChunkAddIndex(builder *flatbuffers.Builder, index int32) {
-	builder.PrependInt32Slot(1, index, 0)
-}
-func FileChunkAddTotalChunks(builder *flatbuffers.Builder, totalChunks int32) {
-	builder.PrependInt32Slot(2, totalChunks, 0)
+func FileChunkAddChunkIndex(builder *flatbuffers.Builder, chunkIndex uint32) {
+	builder.PrependUint32Slot(1, chunkIndex, 0)
 }
 func FileChunkAddData(builder *flatbuffers.Builder, data flatbuffers.UOffsetT) {
-	builder.PrependUOffsetTSlot(3, flatbuffers.UOffsetT(data), 0)
+	builder.PrependUOffsetTSlot(2, flatbuffers.UOffsetT(data), 0)
 }
 func FileChunkStartDataVector(builder *flatbuffers.Builder, numElems int) flatbuffers.UOffsetT {
 	return builder.StartVector(1, numElems, 1)
+}
+func FileChunkAddHash(builder *flatbuffers.Builder, hash flatbuffers.UOffsetT) {
+	builder.PrependUOffsetTSlot(3, flatbuffers.UOffsetT(hash), 0)
+}
+func FileChunkAddEncrypted(builder *flatbuffers.Builder, encrypted bool) {
+	builder.PrependBoolSlot(4, encrypted, false)
+}
+func FileChunkAddCompression(builder *flatbuffers.Builder, compression flatbuffers.UOffsetT) {
+	builder.PrependUOffsetTSlot(5, flatbuffers.UOffsetT(compression), 0)
 }
 func FileChunkEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

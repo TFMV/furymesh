@@ -28,11 +28,40 @@ type WebRTCTransport struct {
 	// Active transfers
 	activeTransfers map[string]bool
 	transfersMu     sync.RWMutex
+
+	// Chunk selection strategy
+	chunkStrategy ChunkSelectionStrategy
+
+	// Available peers for each file
+	availablePeers   map[string]map[string][]int // fileID -> peerID -> []chunkIndex
+	availablePeersMu sync.RWMutex
+
+	// Context for cancellation
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 // WebRTCConfig contains configuration for WebRTC connections
 type WebRTCConfig struct {
 	ICEServers []string
+	// Add new configuration options
+	MaxConcurrentChunks int
+	RetryInterval       time.Duration
+	MaxRetries          int
+	IdleTimeout         time.Duration
+	BufferSize          int
+}
+
+// DefaultWebRTCConfig returns a default WebRTC configuration
+func DefaultWebRTCConfig() WebRTCConfig {
+	return WebRTCConfig{
+		ICEServers:          []string{"stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"},
+		MaxConcurrentChunks: 5,
+		RetryInterval:       5 * time.Second,
+		MaxRetries:          3,
+		IdleTimeout:         30 * time.Second,
+		BufferSize:          10, // Buffer 10 chunks ahead
+	}
 }
 
 // NewWebRTCTransport creates a new WebRTCTransport
@@ -50,16 +79,25 @@ func NewWebRTCTransport(
 		})
 	}
 
+	// Create WebRTC configuration
+	webrtcConfig := webrtc.Configuration{
+		ICEServers: iceServers,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
 	return &WebRTCTransport{
 		logger:          logger,
 		transferManager: transferManager,
 		storageManager:  storageManager,
 		peerConnections: make(map[string]*webrtc.PeerConnection),
 		dataChannels:    make(map[string]*webrtc.DataChannel),
+		config:          webrtcConfig,
 		activeTransfers: make(map[string]bool),
-		config: webrtc.Configuration{
-			ICEServers: iceServers,
-		},
+		chunkStrategy:   GetRarestFirstStrategy(), // Default to rarest first
+		availablePeers:  make(map[string]map[string][]int),
+		ctx:             ctx,
+		cancel:          cancel,
 	}
 }
 
@@ -658,23 +696,26 @@ func (w *WebRTCTransport) CompleteTransfer(peerID, fileID string) error {
 	return nil
 }
 
-// Close closes all peer connections
+// Close closes the WebRTC transport
 func (w *WebRTCTransport) Close() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	for peerID, pc := range w.peerConnections {
-		w.logger.Info("Closing peer connection", zap.String("peer_id", peerID))
-		pc.Close()
+	// Cancel the context
+	if w.cancel != nil {
+		w.cancel()
 	}
 
+	// Close all peer connections
+	for peerID, pc := range w.peerConnections {
+		if err := pc.Close(); err != nil {
+			w.logger.Error("Failed to close peer connection", zap.String("peerID", peerID), zap.Error(err))
+		}
+	}
+
+	// Clear maps
 	w.peerConnections = make(map[string]*webrtc.PeerConnection)
 	w.dataChannels = make(map[string]*webrtc.DataChannel)
-
-	// Clear active transfers
-	w.transfersMu.Lock()
-	w.activeTransfers = make(map[string]bool)
-	w.transfersMu.Unlock()
 }
 
 // SendDataChannelMessage sends a message to a peer over the data channel
@@ -703,4 +744,142 @@ func (w *WebRTCTransport) SendDataChannelMessage(peerID string, message interfac
 		zap.String("message_type", message.(map[string]interface{})["type"].(string)))
 
 	return nil
+}
+
+// RequestFileFromMultiplePeers requests a file from multiple peers
+func (w *WebRTCTransport) RequestFileFromMultiplePeers(ctx context.Context, fileID string, peerIDs []string) error {
+	w.logger.Info("Requesting file from multiple peers",
+		zap.String("fileID", fileID),
+		zap.Strings("peerIDs", peerIDs))
+
+	if len(peerIDs) == 0 {
+		return fmt.Errorf("no peers specified")
+	}
+
+	// Mark transfer as active
+	w.transfersMu.Lock()
+	w.activeTransfers[fileID] = true
+	w.transfersMu.Unlock()
+
+	// Create a context with cancellation
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// Create a wait group to wait for all requests to complete
+	var wg sync.WaitGroup
+	errChan := make(chan error, len(peerIDs))
+
+	// Request file metadata from all peers
+	for _, peerID := range peerIDs {
+		wg.Add(1)
+		go func(pid string) {
+			defer wg.Done()
+
+			// Send file request message
+			message := map[string]interface{}{
+				"type":    "file_request",
+				"file_id": fileID,
+			}
+
+			if err := w.SendDataChannelMessage(pid, message); err != nil {
+				errChan <- fmt.Errorf("failed to send file request to peer %s: %w", pid, err)
+				return
+			}
+
+			// Add peer to available peers for this file
+			w.availablePeersMu.Lock()
+			if _, exists := w.availablePeers[fileID]; !exists {
+				w.availablePeers[fileID] = make(map[string][]int)
+			}
+			// We don't know which chunks this peer has yet, so leave it empty
+			w.availablePeers[fileID][pid] = []int{}
+			w.availablePeersMu.Unlock()
+		}(peerID)
+	}
+
+	// Wait for all requests to complete or context to be cancelled
+	go func() {
+		wg.Wait()
+		close(errChan)
+	}()
+
+	// Collect errors
+	var errs []error
+	for err := range errChan {
+		errs = append(errs, err)
+	}
+
+	if len(errs) == len(peerIDs) {
+		// All requests failed
+		return fmt.Errorf("all file requests failed: %v", errs)
+	}
+
+	return nil
+}
+
+// AddPeerForTransfer adds a peer for a file transfer
+func (w *WebRTCTransport) AddPeerForTransfer(fileID string, peerID string, availableChunks []int) error {
+	w.logger.Info("Adding peer for transfer",
+		zap.String("fileID", fileID),
+		zap.String("peerID", peerID),
+		zap.Ints("availableChunks", availableChunks))
+
+	// Add peer to available peers for this file
+	w.availablePeersMu.Lock()
+	defer w.availablePeersMu.Unlock()
+
+	if _, exists := w.availablePeers[fileID]; !exists {
+		w.availablePeers[fileID] = make(map[string][]int)
+	}
+	w.availablePeers[fileID][peerID] = availableChunks
+
+	return nil
+}
+
+// SetChunkSelectionStrategy sets the chunk selection strategy
+func (w *WebRTCTransport) SetChunkSelectionStrategy(strategy ChunkSelectionStrategy) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.chunkStrategy = strategy
+}
+
+// GetAvailablePeersForFile gets the available peers for a file
+func (w *WebRTCTransport) GetAvailablePeersForFile(fileID string) map[string][]int {
+	w.availablePeersMu.RLock()
+	defer w.availablePeersMu.RUnlock()
+
+	if peers, exists := w.availablePeers[fileID]; exists {
+		// Make a copy to avoid concurrent map access
+		result := make(map[string][]int)
+		for peerID, chunks := range peers {
+			chunksCopy := make([]int, len(chunks))
+			copy(chunksCopy, chunks)
+			result[peerID] = chunksCopy
+		}
+		return result
+	}
+
+	return make(map[string][]int)
+}
+
+// CleanupCompletedTransfers cleans up completed transfers
+func (w *WebRTCTransport) CleanupCompletedTransfers() {
+	w.transfersMu.Lock()
+	defer w.transfersMu.Unlock()
+
+	// Get active transfers from the transfer manager
+	activeTransfers := w.transferManager.ListActiveTransfers()
+
+	// Find completed transfers (those that are in our active list but not in the transfer manager's active list)
+	for fileID := range w.activeTransfers {
+		if _, exists := activeTransfers[fileID]; !exists {
+			// This transfer is no longer active, remove it
+			delete(w.activeTransfers, fileID)
+
+			// Clean up available peers for this file
+			w.availablePeersMu.Lock()
+			delete(w.availablePeers, fileID)
+			w.availablePeersMu.Unlock()
+		}
+	}
 }

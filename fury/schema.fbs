@@ -1,26 +1,75 @@
 namespace fury;
 
+// Message types for different operations
+enum MessageType : byte {
+  FileChunk = 0,
+  FileMetadata = 1,
+  ChunkRequest = 2,
+  TransferStatus = 3,
+  ErrorMessage = 4
+}
+
+// File metadata information
+table FileMetadata {
+  file_id:string;
+  file_name:string;
+  file_size:uint64;
+  chunk_size:uint32;
+  total_chunks:uint32;
+  mime_type:string;
+  created_at:int64;
+  hash:string;
+  chunk_hashes:[string];
+  encrypted:bool = false;
+  compression:string;
+}
+
+// File chunk data
 table FileChunk {
-  id: string;
-  index: int;
-  total_chunks: int;
-  data: [ubyte];
+  file_id:string;
+  chunk_index:uint32;
+  data:[ubyte];
+  hash:string;
+  encrypted:bool = false;
+  compression:string;
 }
 
-table PeerMetadata {
-  peer_id: string;
-  available_files: [string];
+// Request for a specific chunk
+table ChunkRequest {
+  file_id:string;
+  chunk_index:uint32;
+  priority:uint8 = 0;
 }
 
-table DataRequest {
-  request_id: string;
-  file_id: string;
+// Status of a file transfer
+table TransferStatus {
+  file_id:string;
+  chunks_received:uint32;
+  total_chunks:uint32;
+  bytes_received:uint64;
+  total_bytes:uint64;
+  transfer_rate:uint32;
+  eta_seconds:uint32;
+  status:string;
 }
 
-table DataResponse {
-  request_id: string;
-  file_id: string;
-  chunk: FileChunk;
+// Error message
+table ErrorMessage {
+  code:int32;
+  message:string;
+  context:string;
 }
 
-root_type DataResponse;
+// Root message type that can contain any of the above
+table Message {
+  type:MessageType;
+  sender_id:string;
+  timestamp:int64;
+  file_metadata:FileMetadata;
+  file_chunk:FileChunk;
+  chunk_request:ChunkRequest;
+  transfer_status:TransferStatus;
+  error_message:ErrorMessage;
+}
+
+root_type Message;
