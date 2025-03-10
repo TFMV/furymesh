@@ -226,4 +226,39 @@ function enhanceMobileNavigation() {
       }
     }
   }
+  
+  // Simplify navigation to show only top-level headings
+  simplifyNavigation();
+}
+
+// Function to simplify navigation to show only top-level headings
+function simplifyNavigation() {
+  // Get all navigation items
+  const navItems = document.querySelectorAll('.md-nav__item--nested');
+  
+  // Add click handlers to expand/collapse sections
+  navItems.forEach(function(item) {
+    const label = item.querySelector('.md-nav__link');
+    const nav = item.querySelector('.md-nav');
+    
+    if (label && nav) {
+      // Initially collapse all nested navigation
+      if (!item.classList.contains('md-nav__item--active')) {
+        nav.style.display = 'none';
+      }
+      
+      // Add click handler to toggle visibility
+      label.addEventListener('click', function(event) {
+        event.preventDefault();
+        
+        if (nav.style.display === 'none') {
+          nav.style.display = 'block';
+          item.classList.add('md-nav__item--expanded');
+        } else {
+          nav.style.display = 'none';
+          item.classList.remove('md-nav__item--expanded');
+        }
+      });
+    }
+  });
 } 
