@@ -174,15 +174,8 @@ function enhanceMobileNavigation() {
   const isMobile = window.matchMedia("(max-width: 76.1875em)").matches;
   
   if (isMobile) {
-    // Ensure navigation is visible on mobile
+    // Get the sidebar element
     const primarySidebar = document.querySelector('.md-sidebar--primary');
-    const secondarySidebar = document.querySelector('.md-sidebar--secondary');
-    
-    if (primarySidebar) {
-      primarySidebar.style.display = 'block';
-      primarySidebar.style.position = 'fixed';
-      primarySidebar.style.zIndex = '21';
-    }
     
     // Add a toggle button for mobile navigation if it doesn't exist
     if (!document.querySelector('.mobile-nav-toggle')) {
@@ -193,16 +186,14 @@ function enhanceMobileNavigation() {
         toggleButton.innerHTML = '<i class="fas fa-bars"></i>';
         toggleButton.setAttribute('aria-label', 'Toggle navigation');
         
-        // Insert before the search button
-        const searchButton = document.querySelector('.md-header__button.md-icon');
-        if (searchButton) {
-          header.insertBefore(toggleButton, searchButton);
-        } else {
-          header.appendChild(toggleButton);
-        }
+        // Insert at the beginning of the header
+        header.insertBefore(toggleButton, header.firstChild);
         
         // Toggle navigation when button is clicked
-        toggleButton.addEventListener('click', function() {
+        toggleButton.addEventListener('click', function(event) {
+          event.preventDefault();
+          event.stopPropagation();
+          
           if (primarySidebar) {
             const isVisible = primarySidebar.classList.contains('md-sidebar--open');
             if (isVisible) {
@@ -222,6 +213,14 @@ function enhanceMobileNavigation() {
               primarySidebar.classList.remove('md-sidebar--open');
               toggleButton.innerHTML = '<i class="fas fa-bars"></i>';
             }
+          }
+        });
+        
+        // Also handle the Escape key to close the navigation
+        document.addEventListener('keydown', function(event) {
+          if (event.key === 'Escape' && primarySidebar && primarySidebar.classList.contains('md-sidebar--open')) {
+            primarySidebar.classList.remove('md-sidebar--open');
+            toggleButton.innerHTML = '<i class="fas fa-bars"></i>';
           }
         });
       }

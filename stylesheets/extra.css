@@ -333,6 +333,13 @@ pre:hover .copy-button {
   margin-right: 0.5rem;
 }
 
+/* Default sidebar behavior for all screen sizes */
+.md-sidebar--primary,
+.md-sidebar--secondary {
+  display: block !important;
+}
+
+/* Mobile-specific styles */
 @media screen and (max-width: 76.1875em) {
   .mobile-nav-toggle {
     display: block;
@@ -341,6 +348,13 @@ pre:hover .copy-button {
   .md-sidebar--primary {
     transform: translateX(-100%);
     transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    z-index: 21;
+    width: 16.7rem;
+    background-color: var(--md-default-bg-color);
+    box-shadow: none;
   }
   
   .md-sidebar--primary.md-sidebar--open {
@@ -352,30 +366,18 @@ pre:hover .copy-button {
   .md-main__inner {
     margin-left: 0 !important;
   }
-}
-
-/* Hide navigation sidebar */
-.md-sidebar--primary {
-  display: block !important; /* Show by default for mobile */
-}
-
-/* Hide table of contents sidebar */
-.md-sidebar--secondary {
-  display: block !important; /* Show by default for mobile */
-}
-
-/* Adjust main content to take full width */
-.md-main__inner {
-  margin-top: 0;
-  max-width: 100%;
-}
-
-/* For larger screens, hide sidebars and adjust layout */
-@media screen and (min-width: 76.25em) {
-  .md-sidebar--primary {
-    display: none !important;
-  }
   
+  /* Adjust header for mobile */
+  .md-header {
+    position: sticky;
+    top: 0;
+    z-index: 22;
+  }
+}
+
+/* Desktop-specific styles */
+@media screen and (min-width: 76.25em) {
+  .md-sidebar--primary,
   .md-sidebar--secondary {
     display: none !important;
   }
@@ -384,6 +386,12 @@ pre:hover .copy-button {
     margin-left: 0;
     margin-right: 0;
   }
+}
+
+/* Adjust main content to take full width */
+.md-main__inner {
+  margin-top: 0;
+  max-width: 100%;
 }
 
 .md-content {
