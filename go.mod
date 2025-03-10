@@ -9,6 +9,7 @@ require (
 	github.com/pion/webrtc/v3 v3.3.5
 	github.com/spf13/cobra v1.9.1
 	github.com/spf13/viper v1.19.0
+	github.com/stretchr/testify v1.9.0
 	go.uber.org/zap v1.27.0
 )
 
@@ -48,7 +49,7 @@ require (
 	github.com/spf13/afero v1.11.0 // indirect
 	github.com/spf13/cast v1.6.0 // indirect
 	github.com/spf13/pflag v1.0.6 // indirect
-	github.com/stretchr/testify v1.9.0 // indirect
+	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasthttp v1.51.0 // indirect
