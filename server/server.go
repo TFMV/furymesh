@@ -8,10 +8,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
+
+	"github.com/TFMV/furymesh/metrics"
 )
 
 // StartAPIServer starts the Fiber-based API server that exposes monitoring endpoints.
 func StartAPIServer(logger *zap.Logger) {
+	metrics.Register()
 	app := fiber.New()
 
 	// Define an endpoint to check the node status.

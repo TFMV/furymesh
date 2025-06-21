@@ -13,6 +13,10 @@ import (
 	"github.com/TFMV/furymesh/common"
 	"github.com/TFMV/furymesh/file"
 	"github.com/TFMV/furymesh/fury/fury"
+	"github.com/TFMV/furymesh/metrics"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // WebRTCTransferConfig contains configuration for WebRTC file transfers
@@ -367,6 +371,14 @@ func (w *WebRTCTransferManager) requestFileChunk(peerID, fileID string, chunkInd
 
 // sendFileChunk sends a file chunk to a peer
 func (w *WebRTCTransferManager) sendFileChunk(peerID, fileID string, chunkIndex int) error {
+	ctx, span := otel.Tracer("furymesh/transfer").Start(context.Background(), "sendFileChunk")
+	defer span.End()
+	span.SetAttributes(
+		attribute.String("peer_id", peerID),
+		attribute.String("file_id", fileID),
+		attribute.Int("chunk_index", chunkIndex),
+	)
+
 	// Get chunk data
 	chunk, err := w.fileManager.GetChunker().GetChunk(fileID, chunkIndex)
 	if err != nil {
@@ -374,7 +386,11 @@ func (w *WebRTCTransferManager) sendFileChunk(peerID, fileID string, chunkIndex 
 	}
 
 	// Send chunk
-	return w.messaging.SendFileChunk(peerID, fileID, chunkIndex, chunk.Data, false, "")
+	err = w.messaging.SendFileChunk(peerID, fileID, chunkIndex, chunk.Data, false, "")
+	if err == nil {
+		metrics.TransferThroughput.Add(float64(len(chunk.Data)))
+	}
+	return err
 }
 
 // handleFileMetadata handles a file metadata message
@@ -425,6 +441,10 @@ func (w *WebRTCTransferManager) handleFileMetadata(peerID string, messageType fu
 
 // handleFileChunk handles a file chunk message
 func (w *WebRTCTransferManager) handleFileChunk(peerID string, messageType fury.MessageType, data []byte) error {
+	ctx, span := otel.Tracer("furymesh/transfer").Start(context.Background(), "handleFileChunk")
+	defer span.End()
+	span.SetAttributes(attribute.String("peer_id", peerID))
+
 	// Get the file chunk from the message
 	fileChunk, err := w.messaging.GetSerializer().DeserializeFileChunk(data)
 	if err != nil {
@@ -465,6 +485,7 @@ func (w *WebRTCTransferManager) handleFileChunk(peerID string, messageType fury.
 	transfer.mu.Lock()
 	transfer.CompletedChunks++
 	transfer.BytesTransferred += int64(len(fileChunk.Data))
+	metrics.TransferThroughput.Add(float64(len(fileChunk.Data)))
 	transfer.LastActivity = time.Now()
 
 	// Calculate transfer rate

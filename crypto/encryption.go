@@ -16,6 +16,8 @@ import (
 	"sync"
 
 	"go.uber.org/zap"
+
+	"github.com/TFMV/furymesh/metrics"
 )
 
 const (
@@ -233,6 +235,7 @@ func (em *EncryptionManager) EncryptSessionKey(peerID string, sessionKey []byte)
 		nil,
 	)
 	if err != nil {
+		metrics.EncryptionFailures.Inc()
 		return nil, fmt.Errorf("failed to encrypt session key: %w", err)
 	}
 
@@ -249,6 +252,7 @@ func (em *EncryptionManager) DecryptSessionKey(encryptedKey []byte) ([]byte, err
 		nil,
 	)
 	if err != nil {
+		metrics.EncryptionFailures.Inc()
 		return nil, fmt.Errorf("failed to decrypt session key: %w", err)
 	}
 
@@ -260,18 +264,21 @@ func (em *EncryptionManager) EncryptData(data, sessionKey []byte) ([]byte, error
 	// Create a new AES cipher block
 	block, err := aes.NewCipher(sessionKey)
 	if err != nil {
+		metrics.EncryptionFailures.Inc()
 		return nil, fmt.Errorf("failed to create AES cipher: %w", err)
 	}
 
 	// Create a GCM cipher mode
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
+		metrics.EncryptionFailures.Inc()
 		return nil, fmt.Errorf("failed to create GCM: %w", err)
 	}
 
 	// Generate a random nonce
 	nonce := make([]byte, gcm.NonceSize())
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		metrics.EncryptionFailures.Inc()
 		return nil, fmt.Errorf("failed to generate nonce: %w", err)
 	}
 
@@ -285,18 +292,21 @@ func (em *EncryptionManager) DecryptData(encryptedData, sessionKey []byte) ([]by
 	// Create a new AES cipher block
 	block, err := aes.NewCipher(sessionKey)
 	if err != nil {
+		metrics.EncryptionFailures.Inc()
 		return nil, fmt.Errorf("failed to create AES cipher: %w", err)
 	}
 
 	// Create a GCM cipher mode
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
+		metrics.EncryptionFailures.Inc()
 		return nil, fmt.Errorf("failed to create GCM: %w", err)
 	}
 
 	// Extract the nonce
 	nonceSize := gcm.NonceSize()
 	if len(encryptedData) < nonceSize {
+		metrics.EncryptionFailures.Inc()
 		return nil, errors.New("encrypted data too short")
 	}
 
@@ -305,6 +315,7 @@ func (em *EncryptionManager) DecryptData(encryptedData, sessionKey []byte) ([]by
 	// Decrypt the data
 	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
+		metrics.EncryptionFailures.Inc()
 		return nil, fmt.Errorf("failed to decrypt data: %w", err)
 	}
 
@@ -316,17 +327,20 @@ func (em *EncryptionManager) EncryptFile(inputPath, outputPath string, sessionKe
 	// Read the input file
 	data, err := os.ReadFile(inputPath)
 	if err != nil {
+		metrics.EncryptionFailures.Inc()
 		return fmt.Errorf("failed to read input file: %w", err)
 	}
 
 	// Encrypt the data
 	encryptedData, err := em.EncryptData(data, sessionKey)
 	if err != nil {
+		metrics.EncryptionFailures.Inc()
 		return fmt.Errorf("failed to encrypt data: %w", err)
 	}
 
 	// Write the encrypted data to the output file
 	if err := os.WriteFile(outputPath, encryptedData, 0644); err != nil {
+		metrics.EncryptionFailures.Inc()
 		return fmt.Errorf("failed to write output file: %w", err)
 	}
 
@@ -338,17 +352,20 @@ func (em *EncryptionManager) DecryptFile(inputPath, outputPath string, sessionKe
 	// Read the input file
 	encryptedData, err := os.ReadFile(inputPath)
 	if err != nil {
+		metrics.EncryptionFailures.Inc()
 		return fmt.Errorf("failed to read input file: %w", err)
 	}
 
 	// Decrypt the data
 	data, err := em.DecryptData(encryptedData, sessionKey)
 	if err != nil {
+		metrics.EncryptionFailures.Inc()
 		return fmt.Errorf("failed to decrypt data: %w", err)
 	}
 
 	// Write the decrypted data to the output file
 	if err := os.WriteFile(outputPath, data, 0644); err != nil {
+		metrics.EncryptionFailures.Inc()
 		return fmt.Errorf("failed to write output file: %w", err)
 	}
 

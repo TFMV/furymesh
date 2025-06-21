@@ -14,6 +14,10 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+
+	"github.com/TFMV/furymesh/metrics"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 const (
@@ -387,6 +391,12 @@ func (node *KademliaNode) refreshLoop() {
 
 // FindNode finds the k closest nodes to the target ID
 func (node *KademliaNode) FindNode(target NodeID) ([]*Contact, error) {
+	start := time.Now()
+	ctx, span := otel.Tracer("furymesh/dht").Start(context.Background(), "FindNode")
+	span.SetAttributes(attribute.String("target_id", target.String()))
+	defer span.End()
+	defer metrics.DHTLookupLatency.Observe(time.Since(start).Seconds())
+
 	if node.RPCClient == nil {
 		return nil, errors.New("RPC client not initialized")
 	}
@@ -511,6 +521,12 @@ func (node *KademliaNode) FindNode(target NodeID) ([]*Contact, error) {
 
 // FindValue finds a value in the DHT
 func (node *KademliaNode) FindValue(key []byte) ([]byte, error) {
+	start := time.Now()
+	ctx, span := otel.Tracer("furymesh/dht").Start(context.Background(), "FindValue")
+	span.SetAttributes(attribute.String("key", hex.EncodeToString(key)))
+	defer span.End()
+	defer metrics.DHTLookupLatency.Observe(time.Since(start).Seconds())
+
 	if node.RPCClient == nil {
 		return nil, errors.New("RPC client not initialized")
 	}
