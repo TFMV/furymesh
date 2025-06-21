@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"sync"
 	"time"
 
 	flatbuffers "github.com/google/flatbuffers/go"
@@ -19,21 +20,30 @@ var (
 
 // FlatBuffersSerializer handles serialization and deserialization of messages using FlatBuffers
 type FlatBuffersSerializer struct {
-	logger *zap.Logger
-	nodeID string
+	logger      *zap.Logger
+	nodeID      string
+	builderPool sync.Pool
 }
 
 // NewFlatBuffersSerializer creates a new FlatBuffers serializer
 func NewFlatBuffersSerializer(logger *zap.Logger, nodeID string) *FlatBuffersSerializer {
-	return &FlatBuffersSerializer{
+	s := &FlatBuffersSerializer{
 		logger: logger,
 		nodeID: nodeID,
 	}
+	s.builderPool.New = func() interface{} {
+		return flatbuffers.NewBuilder(1024)
+	}
+	return s
 }
 
 // SerializeFileMetadata serializes file metadata into a FlatBuffers message
 func (f *FlatBuffersSerializer) SerializeFileMetadata(metadata *ChunkMetadata) []byte {
-	builder := flatbuffers.NewBuilder(0)
+	builder := f.builderPool.Get().(*flatbuffers.Builder)
+	defer func() {
+		builder.Reset()
+		f.builderPool.Put(builder)
+	}()
 
 	// Create chunk hashes array
 	chunkHashOffsets := make([]flatbuffers.UOffsetT, len(metadata.ChunkHashes))
@@ -115,7 +125,11 @@ func (f *FlatBuffersSerializer) DeserializeFileMetadata(data []byte) (*ChunkMeta
 
 // SerializeFileChunk serializes a file chunk into a FlatBuffers message
 func (f *FlatBuffersSerializer) SerializeFileChunk(fileID string, chunkIndex int, data []byte, encrypted bool, compression string) []byte {
-	builder := flatbuffers.NewBuilder(0)
+	builder := f.builderPool.Get().(*flatbuffers.Builder)
+	defer func() {
+		builder.Reset()
+		f.builderPool.Put(builder)
+	}()
 
 	// Calculate hash of the chunk data
 	hash := sha256.Sum256(data)
@@ -184,7 +198,11 @@ func (f *FlatBuffersSerializer) DeserializeFileChunk(data []byte) (*FileChunkDat
 
 // SerializeChunkRequest serializes a chunk request into a FlatBuffers message
 func (f *FlatBuffersSerializer) SerializeChunkRequest(fileID string, chunkIndex int, priority uint8) []byte {
-	builder := flatbuffers.NewBuilder(0)
+	builder := f.builderPool.Get().(*flatbuffers.Builder)
+	defer func() {
+		builder.Reset()
+		f.builderPool.Put(builder)
+	}()
 
 	// Create strings
 	fileIDOffset := builder.CreateString(fileID)
@@ -230,7 +248,11 @@ func (f *FlatBuffersSerializer) DeserializeChunkRequest(data []byte) (*DataReque
 
 // SerializeTransferStatus serializes a transfer status into a FlatBuffers message
 func (f *FlatBuffersSerializer) SerializeTransferStatus(transferID string, stats *TransferStats) []byte {
-	builder := flatbuffers.NewBuilder(0)
+	builder := f.builderPool.Get().(*flatbuffers.Builder)
+	defer func() {
+		builder.Reset()
+		f.builderPool.Put(builder)
+	}()
 
 	// Create strings
 	fileIDOffset := builder.CreateString(transferID)
@@ -301,7 +323,11 @@ func (f *FlatBuffersSerializer) DeserializeTransferStatus(data []byte) (*Transfe
 
 // SerializeErrorMessage serializes an error message into a FlatBuffers message
 func (f *FlatBuffersSerializer) SerializeErrorMessage(code int32, message, context string) []byte {
-	builder := flatbuffers.NewBuilder(0)
+	builder := f.builderPool.Get().(*flatbuffers.Builder)
+	defer func() {
+		builder.Reset()
+		f.builderPool.Put(builder)
+	}()
 
 	// Create strings
 	messageOffset := builder.CreateString(message)

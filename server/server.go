@@ -4,6 +4,8 @@ import (
 	"fmt"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/adaptor"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 )
@@ -20,6 +22,9 @@ func StartAPIServer(logger *zap.Logger) {
 			"peers":  []string{"peer1", "peer2"},
 		})
 	})
+
+	// Expose Prometheus metrics
+	app.Get("/metrics", adaptor.HTTPHandler(promhttp.Handler()))
 
 	// Get the API port from configuration; default to 8080 if not set.
 	port := viper.GetInt("api.port")

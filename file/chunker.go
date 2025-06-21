@@ -97,90 +97,40 @@ func (c *Chunker) ChunkFile(filePath string) (*ChunkMetadata, error) {
 		return nil, fmt.Errorf("failed to create chunk directory: %w", err)
 	}
 
-	// Calculate file hash
+	// Process the file sequentially while computing the overall file hash.
+	// This avoids reading the file twice and keeps memory usage predictable.
 	fileHasher := sha256.New()
-	if _, err := file.Seek(0, 0); err != nil {
-		return nil, fmt.Errorf("failed to seek to beginning of file: %w", err)
-	}
 
-	if _, err := io.Copy(fileHasher, file); err != nil {
-		return nil, fmt.Errorf("failed to calculate file hash: %w", err)
+	for i := 0; i < totalChunks; i++ {
+		offset := int64(i * c.chunkSize)
+		size := c.chunkSize
+		if offset+int64(size) > fileSize {
+			size = int(fileSize - offset)
+		}
+
+		buffer := make([]byte, size)
+		if _, err := file.ReadAt(buffer, offset); err != nil && err != io.EOF {
+			return nil, fmt.Errorf("failed to read chunk %d: %w", i, err)
+		}
+
+		fileHasher.Write(buffer)
+
+		chunkHash := sha256.Sum256(buffer)
+		metadata.ChunkHashes[i] = hex.EncodeToString(chunkHash[:])
+
+		chunkPath := filepath.Join(chunkDir, fmt.Sprintf("%d.chunk", i))
+		if err := os.WriteFile(chunkPath, buffer, 0644); err != nil {
+			return nil, fmt.Errorf("failed to write chunk %d: %w", i, err)
+		}
+
+		c.logger.Debug("Chunk created",
+			zap.String("file_id", fileID),
+			zap.Int("chunk_index", i),
+			zap.Int("chunk_size", size),
+			zap.String("chunk_hash", metadata.ChunkHashes[i]))
 	}
 
 	metadata.FileHash = hex.EncodeToString(fileHasher.Sum(nil))
-
-	// Reset file position
-	if _, err := file.Seek(0, 0); err != nil {
-		return nil, fmt.Errorf("failed to seek to beginning of file: %w", err)
-	}
-
-	// Process chunks with a worker pool
-	var wg sync.WaitGroup
-	semaphore := make(chan struct{}, MaxConcurrentChunks)
-	errChan := make(chan error, totalChunks)
-
-	for i := 0; i < totalChunks; i++ {
-		wg.Add(1)
-		semaphore <- struct{}{} // Acquire semaphore
-
-		go func(chunkIndex int) {
-			defer wg.Done()
-			defer func() { <-semaphore }() // Release semaphore
-
-			offset := int64(chunkIndex * c.chunkSize)
-
-			// Create a buffer for this chunk
-			size := c.chunkSize
-			if offset+int64(size) > fileSize {
-				size = int(fileSize - offset)
-			}
-
-			buffer := make([]byte, size)
-
-			// Read the chunk data
-			_, err := file.ReadAt(buffer, offset)
-			if err != nil && err != io.EOF {
-				errChan <- fmt.Errorf("failed to read chunk %d: %w", chunkIndex, err)
-				return
-			}
-
-			// Calculate chunk hash
-			chunkHasher := sha256.New()
-			chunkHasher.Write(buffer)
-			chunkHash := hex.EncodeToString(chunkHasher.Sum(nil))
-
-			// Save chunk hash to metadata
-			metadata.ChunkHashes[chunkIndex] = chunkHash
-
-			// Write chunk to file
-			chunkPath := filepath.Join(chunkDir, fmt.Sprintf("%d.chunk", chunkIndex))
-			if err := os.WriteFile(chunkPath, buffer, 0644); err != nil {
-				errChan <- fmt.Errorf("failed to write chunk %d: %w", chunkIndex, err)
-				return
-			}
-
-			c.logger.Debug("Chunk created",
-				zap.String("file_id", fileID),
-				zap.Int("chunk_index", chunkIndex),
-				zap.Int("chunk_size", size),
-				zap.String("chunk_hash", chunkHash))
-		}(i)
-	}
-
-	// Wait for all chunks to be processed
-	wg.Wait()
-	close(errChan)
-
-	// Check for errors
-	if len(errChan) > 0 {
-		// Clean up chunk directory
-		os.RemoveAll(chunkDir)
-
-		// Return the first error
-		for err := range errChan {
-			return nil, err
-		}
-	}
 
 	// Store metadata
 	c.mu.Lock()
