@@ -9,6 +9,8 @@ import (
 
 	"github.com/pion/webrtc/v3"
 	"go.uber.org/zap"
+
+	"github.com/TFMV/furymesh/metrics"
 )
 
 // WebRTCConfig contains configuration for WebRTC connections
@@ -206,6 +208,7 @@ func (w *WebRTCManager) CreatePeerConnection(peerID string) (*PeerConnection, er
 		case webrtc.PeerConnectionStateConnected:
 			conn.State = PeerConnectionStateConnected
 			conn.LastActivity = time.Now()
+			metrics.ActivePeerCount.Inc()
 			w.mu.RLock()
 			if w.onPeerConnected != nil {
 				go w.onPeerConnected(peerID)
@@ -217,6 +220,7 @@ func (w *WebRTCManager) CreatePeerConnection(peerID string) (*PeerConnection, er
 			conn.State = PeerConnectionStateFailed
 		case webrtc.PeerConnectionStateClosed:
 			conn.State = PeerConnectionStateClosed
+			metrics.ActivePeerCount.Dec()
 			w.mu.RLock()
 			if w.onPeerDisconnect != nil {
 				go w.onPeerDisconnect(peerID)

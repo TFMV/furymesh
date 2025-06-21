@@ -9,8 +9,9 @@ require (
 	github.com/pion/webrtc/v3 v3.3.5
 	github.com/spf13/cobra v1.9.1
 	github.com/spf13/viper v1.19.0
-	github.com/stretchr/testify v1.9.0
-	go.uber.org/zap v1.27.0
+       github.com/stretchr/testify v1.9.0
+       go.uber.org/zap v1.27.0
+       go.opentelemetry.io/otel v1.22.0
 )
 
 require (
