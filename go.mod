@@ -3,7 +3,7 @@ module github.com/TFMV/furymesh
 go 1.24.0
 
 require (
-	github.com/gofiber/fiber/v2 v2.52.6
+	github.com/gofiber/fiber/v2 v2.52.7
 	github.com/google/flatbuffers v25.2.10+incompatible
 	github.com/google/uuid v1.6.0
 	github.com/pion/webrtc/v3 v3.3.5
